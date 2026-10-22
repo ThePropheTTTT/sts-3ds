@@ -126,7 +126,9 @@ def bake(monster_dir, page_images, out_size=96):
                 ).convert("RGBA")
             return page_images[key]
 
-        # Bone world transforms in the setup pose.
+        # Bone world transforms in the setup pose.  The game drives some limbs
+        # through IK/path constraints, but evaluating them once without the
+        # animations distorts the pose; the rest pose is what the sprites show.
         world = {}
         for bone in skeleton["bones"]:
             sx = bone.get("scaleX", 1.0)
@@ -245,8 +247,10 @@ def bake(monster_dir, page_images, out_size=96):
                     sx = np.clip((V * tw).astype(np.int32), 0, tw - 1)
                     sy = np.clip(((1.0 - U) * th).astype(np.int32), 0, th - 1)
                 else:
+                    # Mesh UVs are top-left (libGDX TextureRegion) in the
+                    # unrotated region; do not flip V here.
                     sx = np.clip((U * tw).astype(np.int32), 0, tw - 1)
-                    sy = np.clip(((1.0 - V) * th).astype(np.int32), 0, th - 1)
+                    sy = np.clip((V * th).astype(np.int32), 0, th - 1)
                 src = tex[sy, sx]
                 alpha = src[..., 3] * mask
                 tile[..., :3] = src[..., :3] * alpha[..., None] + tile[..., :3] * (1 - alpha[..., None])
