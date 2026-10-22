@@ -45,24 +45,24 @@ static C2D_SpriteSheet s_act_sheets[3];
 static C2D_Image s_act_img[3];
 static C2D_SpriteSheet s_mon_sheet;
 static C2D_SpriteSheet s_mon_sheet_ref;
-static C2D_Image s_mon_img[21];
-static Tex3DS_SubTexture s_mon_subs[21];
+static C2D_Image s_mon_img[23];
+static Tex3DS_SubTexture s_mon_subs[23];
 
 /* Only these monsters ship in the jar as a single full image; the rest are
  * Spine atlases that would need to be assembled first. */
 /* 512x512 page produced by tools/extract_monsters.py (5x5 cells of 96px).
  * NULL means the bake did not look right yet, so the placeholder box is used. */
-static const char *MON_KEYS[21] = {
+static const char *MON_KEYS[23] = {
     "球体守卫", "史莱姆老大", "勇者", "酸液史莱姆",
     "尖刺史莱姆", "颚虫", "地精大块头", "红虱虫",
     "真菌怪", "邪教徒", "寄生兽", "异鸟",
     "天选者", "大书怪", "牧师", "坦克",
     "蓝奴隶贩子", "红奴隶贩子", "奴隶头子",
-    "铜制机械人偶", "铜球",
+    "铜制机械人偶", "收藏家", "火炬头", "铜球",
 };
 
 static int monster_slot(const char *name) {
-    for (int i = 0; i < 21; i++) {
+    for (int i = 0; i < 23; i++) {
         if (MON_KEYS[i] && strcmp(name, MON_KEYS[i]) == 0) return i;
     }
     return -1;
@@ -146,6 +146,9 @@ static int s_purge_focus;
 static int s_event_sel;
 static int s_detail;
 static int s_pick_sel;
+#if defined(CARD_TEST)
+static int s_boss_demo = 7;   /* CARD_TEST report: B cycles Automaton/Collector */
+#endif
 static int s_panel_tab;
 static int s_panel_scroll;
 static int s_potion_sel;
@@ -390,7 +393,7 @@ static void load_art(void) {
     if (s_mon_sheet) {
         C2D_Image img = C2D_SpriteSheetGetImage(s_mon_sheet, 0);
         s_vis_tex = s_vis_tex ? s_vis_tex : img.tex;
-        for (int i = 0; i < 21; i++) {
+        for (int i = 0; i < 23; i++) {
             C2D_Image one = {img.tex, NULL};
             Tex3DS_SubTexture *sub = &s_mon_subs[i];
             float x = (float)((i % 5) * 96);
@@ -2076,6 +2079,20 @@ static void draw_fight_top(void) {
             snprintf(intent, sizeof(intent), "支援 %d", value);
             intent_color = RGB(200, 205, 210);
             break;
+        case MOVE_RALLY:
+            /* Collector Buff: block for itself and Strength for the room. */
+            snprintf(intent, sizeof(intent), "防御 %d 力量 +%d", value, value2);
+            intent_color = RGB(200, 205, 210);
+            break;
+        case MOVE_CURSE:
+            /* Collector Mega Debuff: equal stacks of Weak/Vulnerable/Frail. */
+            snprintf(intent, sizeof(intent), "虚弱 易伤 脆弱 %d", value);
+            intent_color = RGB(200, 150, 240);
+            break;
+        case MOVE_REVIVE:
+            snprintf(intent, sizeof(intent), "复活");
+            intent_color = RGB(200, 180, 120);
+            break;
         case MOVE_TAUNT:
             snprintf(intent, sizeof(intent), "虚弱 %d 易伤 %d", value, value2);
             intent_color = RGB(200, 150, 240);
@@ -2132,9 +2149,10 @@ static void draw_fight_top(void) {
                 int dmg = battle_enemy_intent_damage(i);
                 icon = dmg <= 4 ? 0 : (dmg <= 9 ? 1 : (dmg <= 14 ? 2 : 3));
             } else if (kind == MOVE_BUFF || kind == MOVE_ANGER || kind == MOVE_FLY ||
-                       kind == MOVE_SPAWN) {
+                       kind == MOVE_SPAWN || kind == MOVE_REVIVE) {
                 icon = 5;
-            } else if (kind == MOVE_DEFEND || kind == MOVE_DEFEND_BUFF || kind == MOVE_SUPPORT) {
+            } else if (kind == MOVE_DEFEND || kind == MOVE_DEFEND_BUFF ||
+                       kind == MOVE_SUPPORT || kind == MOVE_RALLY) {
                 icon = 4;
             } else {
                 icon = 6;
@@ -3163,7 +3181,11 @@ int main(int argc, char **argv) {
             if (kDown & KEY_LEFT) card_test_demo_fight(4);
             if (kDown & KEY_RIGHT) card_test_demo_fight(5);
             if (kDown & KEY_A) card_test_demo_fight(6);   /* three Slavers */
-            if (kDown & KEY_B) card_test_demo_fight(7);   /* BronzeAutomaton */
+            /* B alternates the two act 2 bosses: Automaton (7), Collector (8). */
+            if (kDown & KEY_B) {
+                card_test_demo_fight(s_boss_demo);
+                s_boss_demo = s_boss_demo == 7 ? 8 : 7;
+            }
         }
         update_play_fx();
         update_floaters();

@@ -1705,6 +1705,125 @@ static void test_batch10(void) {
     check("orb two died with boss", g_battle.enemies[2].hp, 0);
 }
 
+/* ---- batch 11: TheCollector and its Torch Heads ------------------------- */
+
+static void collector_fresh(void) {
+    battle_test_spawn_collector();
+    g_run.screen = SCREEN_FIGHT;
+    g_battle.phase = PHASE_PLAYER;
+    g_battle.energy = g_battle.max_energy = 3;
+}
+
+static void test_batch11(void) {
+    Enemy *e;
+
+    /* It opens alone, 282 HP, with Spawn queued. */
+    collector_fresh();
+    e = &g_battle.enemies[0];
+    check("collector one", g_battle.enemy_count, 1);
+    check("collector hp", e->max_hp, 282);
+    check("collector moves", e->move_count, 5);
+    check("collector opens spawn", e->move_index, 0);
+    check("collector spawn intent", battle_intent_kind(0), MOVE_SPAWN);
+    check("collector draw x", e->draw_x, 300);
+    check("collector draw w", e->draw_w, 80);
+
+    /* Spawn: two Torch Heads at 38-40 HP, to the left of the Collector. */
+    g_battle.hp = 80;
+    battle_test_enemy_turn(0);
+    check("collector spawned two", g_battle.enemy_count, 3);
+    check("collector spawn no damage", g_battle.hp, 80);
+    check("torch one name", strcmp(g_battle.enemies[1].name, "火炬头"), 0);
+    check("torch two name", strcmp(g_battle.enemies[2].name, "火炬头"), 0);
+    check("torch one hp", g_battle.enemies[1].max_hp >= 38 && g_battle.enemies[1].max_hp <= 40, 1);
+    check("torch two hp", g_battle.enemies[2].max_hp >= 38 && g_battle.enemies[2].max_hp <= 40, 1);
+    check("torch one owner", g_battle.enemies[1].minion_owner, 0);
+    check("torch two owner", g_battle.enemies[2].minion_owner, 0);
+    check("torch one x", g_battle.enemies[1].draw_x, 160);
+    check("torch two x", g_battle.enemies[2].draw_x, 216);
+    check("torch one width", g_battle.enemies[1].draw_w, 48);
+    check("torch tackle intent", battle_intent_kind(1), MOVE_ATTACK);
+    check("torch tackle damage", battle_enemy_intent_damage(1), 7);
+    check("collector turn after spawn", e->ai_turn, 1);
+
+    /* Fireball is 18. */
+    collector_fresh();
+    battle_test_enemy_turn(0);
+    g_battle.hp = 80;
+    e = &g_battle.enemies[0];
+    e->move_index = 1;
+    battle_test_enemy_turn(0);
+    check("collector fireball", g_battle.hp, 62);
+
+    /* Buff: +15 block for itself, +3 Strength to every living monster. */
+    collector_fresh();
+    battle_test_enemy_turn(0);
+    e = &g_battle.enemies[0];
+    e->block = 0;
+    e->strength = 0;
+    g_battle.enemies[1].strength = 0;
+    g_battle.enemies[2].strength = 0;
+    e->move_index = 2;
+    battle_test_enemy_turn(0);
+    check("collector buff block", e->block, 15);
+    check("collector buff strength", e->strength, 3);
+    check("torch buff strength", g_battle.enemies[1].strength, 3);
+    check("torch two buff strength", g_battle.enemies[2].strength, 3);
+
+    /* Mega Debuff fires once, as soon as turnsTaken is 3. */
+    collector_fresh();
+    battle_test_enemy_turn(0);
+    e = &g_battle.enemies[0];
+    e->ai_turn = 3;
+    e->used_ult = 0;
+    battle_test_choose_roll(0, 0);
+    check("collector mega queued", e->move_index, 3);
+    check("collector mega intent", battle_intent_kind(0), MOVE_CURSE);
+    g_battle.weak = g_battle.vulnerable = g_battle.frail = 0;
+    battle_test_enemy_turn(0);
+    check("collector mega weak", g_battle.weak, 3);
+    check("collector mega vulnerable", g_battle.vulnerable, 3);
+    check("collector mega frail", g_battle.frail, 3);
+    check("collector mega frail just", g_battle.frail_just, 1);
+    check("collector mega used", e->used_ult, 1);
+    battle_test_choose_roll(0, 0);
+    check("collector mega once", e->move_index, 1);
+
+    /* A Torch Head Tackles for 7. */
+    collector_fresh();
+    battle_test_enemy_turn(0);
+    g_battle.hp = 80;
+    g_battle.enemies[1].move_index = 0;
+    battle_test_enemy_turn(1);
+    check("torch tackle", g_battle.hp, 73);
+
+    /* Revive brings a dead head back at full HP, and only once. */
+    collector_fresh();
+    battle_test_enemy_turn(0);
+    battle_test_damage_enemy(1, 999);
+    e = &g_battle.enemies[0];
+    int head_hp = g_battle.enemies[1].max_hp;
+    check("torch dead", g_battle.enemies[1].hp, 0);
+    e->ai_turn = 1;
+    e->last_move = 0;
+    e->last_before = 255;
+    e->move_index = 4;
+    battle_test_enemy_turn(0);
+    check("collector revived", g_battle.enemies[1].hp, head_hp);
+    check("collector revived owner", g_battle.enemies[1].minion_owner, 0);
+    check("collector revived death flag", g_battle.enemies[1].death_done, 0);
+
+    /* Killing the Collector takes both heads with it. */
+    collector_fresh();
+    battle_test_enemy_turn(0);
+    g_battle.enemies[1].hp = 30;
+    g_battle.enemies[2].hp = 30;
+    battle_test_damage_enemy(0, 999);
+    check("collector dead", g_battle.enemies[0].hp, 0);
+    check("torch one died with boss", g_battle.enemies[1].hp, 0);
+    check("torch two died with boss", g_battle.enemies[2].hp, 0);
+}
+
 /* ---- picker preview ---------------------------------------------------- */
 
 /* The card-choice screen only appears mid-combat when one of seven cards is
@@ -1768,13 +1887,17 @@ void card_test_demo_fight(int which) {
     };
     /* 0 Champ, 1 Book of Stabbing, 2 Byrds, 3 Chosen, 4 Parasite,
      * 5 Spheric Guardian, 6 the three Slavers, 7 BronzeAutomaton with its
-     * two summoned orbs.  Same spawn path the real encounter uses, then a
-     * hand so the bottom screen has cards to draw. */
-    if (which < 0 || which > 7) which = 0;
+     * two summoned orbs, 8 the Collector with its Torch Heads.  Same spawn
+     * path the real encounter uses, then a hand so the bottom screen has
+     * cards to draw. */
+    if (which < 0 || which > 8) which = 0;
     if (which == 6) battle_test_spawn_slavers();
     else if (which == 7) {
         battle_test_spawn_automaton();
         battle_test_enemy_turn(0);   /* Spawn Orbs, then Flail */
+    } else if (which == 8) {
+        battle_test_spawn_collector();
+        battle_test_enemy_turn(0);   /* Spawn the two Torch Heads */
     } else if (which <= 1) battle_test_spawn_act2(which == 0 ? 1 : 0);
     else battle_test_spawn_act2_monster(which - 2);
     g_run.act = 2;     /* display is 1-based: the city */
@@ -1830,6 +1953,12 @@ void card_test_demo_fight(int which) {
         g_battle.enemies[2].move_index = 1;
         g_battle.enemies[2].used_entangle = 0;
         g_battle.entangled = 1;
+    } else if (which == 8) {
+        /* Collector Fireball with one Torch Head Tackling on each side. */
+        e->move_index = 1;
+        e->ai_turn = 1;
+        g_battle.enemies[1].move_index = 0;
+        g_battle.enemies[2].move_index = 0;
     } else if (which == 7) {
         /* Automaton Flail + left orb Support + right orb Stasis.  Stock the
          * draw pile so the Stasis turn actually steals a card and the status
@@ -1877,6 +2006,7 @@ void card_test_run(void) {
     test_batch8();
     test_batch9();
     test_batch10();
+    test_batch11();
     g_run.screen = SCREEN_MAP;
 }
 

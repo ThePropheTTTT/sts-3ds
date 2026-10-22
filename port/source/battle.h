@@ -50,6 +50,9 @@ enum {
     MOVE_SPAWN,          /* BronzeAutomaton: summon its two BronzeOrbs */
     MOVE_STASIS,         /* BronzeOrb: steal a card until the orb dies */
     MOVE_SUPPORT,        /* BronzeOrb: value = block given to its owner */
+    MOVE_RALLY,          /* Collector: value = own block, value2 = Strength to all */
+    MOVE_CURSE,          /* Collector: value = Weak/Vulnerable/Frail on the player */
+    MOVE_REVIVE,         /* Collector: bring its dead Torch Heads back */
 };
 
 /* Act 2 uses the same room chances as Act 1 (TheCity.java), so only the
@@ -96,6 +99,7 @@ typedef struct {
     unsigned char second_move;   /* Spheric Guardian: the scripted second move is done */
     unsigned char used_entangle; /* SlaverRed: ENTANGLE is used exactly once */
     unsigned char used_stasis;   /* BronzeOrb: STASIS is used exactly once */
+    unsigned char used_ult;      /* Collector: Mega Debuff is used exactly once */
     unsigned char death_done;    /* on_death has already run for this enemy */
     unsigned char draw_w;        /* custom hitbox width, 0 = use the old layout */
     signed char minion_owner;    /* BronzeOrb: index of its BronzeAutomaton */
@@ -268,6 +272,8 @@ int battle_power(int id);
  * roll without waiting for the real turn order. */
 void battle_test_spawn_act2(int boss);
 void battle_test_spawn_automaton(void);
+void battle_test_spawn_collector(void);
+void battle_test_damage_enemy(int index, int amount);
 void battle_test_spawn_slavers(void);
 /* 0 two Byrds, 1 Chosen, 2 Shelled Parasite, 3 Spheric Guardian. */
 void battle_test_spawn_act2_monster(int which);

@@ -390,6 +390,19 @@ static const EnemyMove BRONZE_ORB_MOVES[] = {
     {MOVE_SUPPORT, 12, 0, 0},      /* Support Beam: owner +12 block */
     {MOVE_STASIS, 0, 0, 0},        /* Stasis: steal a card */
 };
+/* TheCollector.java: ids shifted to indexes.  0 Spawn, 1 Fireball, 2 Buff,
+ * 3 Mega Debuff, 4 Revive. */
+static const EnemyMove COLLECTOR_MOVES[] = {
+    {MOVE_SPAWN, 0, 0, 0},         /* Spawn: two Torch Heads */
+    {MOVE_ATTACK, 18, 0, 0},       /* Fireball */
+    {MOVE_RALLY, 15, 3, 0},        /* Buff: own +15 block, all +3 Strength */
+    {MOVE_CURSE, 3, 0, 0},         /* Mega Debuff: 3 Weak/Vulnerable/Frail */
+    {MOVE_REVIVE, 0, 0, 0},        /* Revive: one Torch Head per dead slot */
+};
+/* TorchHead.java: one move, 7 damage. */
+static const EnemyMove TORCH_HEAD_MOVES[] = {
+    {MOVE_ATTACK, 7, 0, 0},        /* Tackle */
+};
 static const EnemyMove BOSS_MOVES[] = {
     {MOVE_ATTACK, 35, 0, 0},       /* Slam */
     {MOVE_SLIME, 0, 0, 0},         /* Goop Spray */
@@ -550,6 +563,17 @@ static void debuff_enemy(int index, int weak, int vulnerable);
  * Ids are indexes into each enemy's move table. */
 static int last_two(const Enemy *e, int id) {
     return e->last_move == id && e->last_before == id;
+}
+
+/* TheCollector.getMove calls isMinionDead() before it considers Revive. */
+static int collector_has_dead_minion(const Enemy *e) {
+    int boss = (int)(e - g_battle.enemies);
+    if (boss < 0 || boss >= g_battle.enemy_count) return 0;
+    for (int i = 0; i < g_battle.enemy_count; i++) {
+        if (i != boss && g_battle.enemies[i].minion_owner == boss &&
+            g_battle.enemies[i].hp <= 0) return 1;
+    }
+    return 0;
 }
 
 static void choose_move_roll(Enemy *e, unsigned int roll) {
@@ -749,6 +773,31 @@ static void choose_move_roll(Enemy *e, unsigned int roll) {
         if (roll >= 40 && !last_two(e, 0)) e->move_index = 0;
         else if (!last_two(e, 1)) e->move_index = 1;
         else e->move_index = 0;
+        return;
+    }
+
+    /* TheCollector.getMove (TheCollector.java:160-205).  Initial Spawn, then
+     * Mega Debuff once turnsTaken reaches 3, Revive while a head lies dead,
+     * otherwise Fireball / Buff with their no-repeat guards. */
+    if (e->moves == COLLECTOR_MOVES) {
+        if (e->first_turn) {
+            e->first_turn = 0;
+            e->move_index = 0;             /* Spawn */
+            return;
+        }
+        if (e->ai_turn >= 3 && !e->used_ult) {
+            e->move_index = 3;             /* Mega Debuff */
+            return;
+        }
+        if (roll <= 25 && collector_has_dead_minion(e) && e->last_move != 4) {
+            e->move_index = 4;             /* Revive */
+            return;
+        }
+        if (roll <= 70 && !last_two(e, 1)) {
+            e->move_index = 1;             /* Fireball */
+            return;
+        }
+        e->move_index = (unsigned char)(e->last_move != 2 ? 2 : 1);
         return;
     }
 
@@ -961,6 +1010,62 @@ static void spawn_automaton_orbs(int boss_index) {
     g_battle.enemy_count = 3;
 }
 
+/* TheCollector.java: it opens with Spawn and fights alone until the two
+ * Torch Heads arrive.  The game places them to the left of the Collector. */
+static void spawn_collector_heads(int boss_index) {
+    if (g_battle.enemy_count >= 3) return;
+    for (int k = 0; k < 2; k++) {
+        int slot = 1 + k;
+        add_enemy(slot, "火炬头", 38 + (int)(battle_rand() % 3));
+        Enemy *head = &g_battle.enemies[slot];
+        head->art = "火炬头";
+        head->moves = TORCH_HEAD_MOVES;
+        head->move_count = 1;
+        head->minion_owner = (signed char)boss_index;
+        head->draw_x = (short)(k == 0 ? 160 : 216);
+        head->draw_w = 48;
+        head->first_turn = 0;
+        head->last_move = 255;
+        head->last_before = 255;
+        choose_move(head);              /* Tackle */
+    }
+    g_battle.enemy_count = 3;
+}
+
+/* TheCollector.java Revive: every dying minion slot gets a fresh Torch Head. */
+static void revive_collector_heads(int boss_index) {
+    for (int i = 0; i < g_battle.enemy_count; i++) {
+        Enemy *head = &g_battle.enemies[i];
+        if (i == boss_index || head->minion_owner != boss_index || head->hp > 0) continue;
+        head->hp = head->max_hp;
+        head->block = 0;
+        head->vulnerable = 0;
+        head->weak = 0;
+        head->strength = 0;
+        head->death_done = 0;
+        head->stasis_card = -1;
+        head->move_index = 0;
+        head->last_move = 255;
+        head->last_before = 255;
+        head->first_turn = 0;
+        choose_move(head);
+    }
+}
+
+/* TheCollector.java.  HP 282; it starts alone and summons its Torch Heads. */
+static void setup_act2_collector(void) {
+    add_enemy(0, "收藏家", 282);
+    Enemy *e = &g_battle.enemies[0];
+    e->moves = COLLECTOR_MOVES;
+    e->move_count = 5;
+    e->draw_x = 300;
+    e->draw_w = 80;
+    e->last_move = 255;
+    e->last_before = 255;
+    choose_move(e);                    /* first turn: Spawn */
+    g_battle.enemy_count = 1;
+}
+
 /* Act 2 (The City). HP and move values come from the city monster sources. */
 static void setup_act2(int kind) {
     g_battle.enemy_count = 0;
@@ -985,11 +1090,11 @@ static void setup_act2(int kind) {
         return;
     }
     if (kind == NODE_BOSS) {
-        /* The city boss pool is the Champ, the Automaton or the Collector.
-         * The Collector is not implemented yet, so the two finished bosses
-         * split the pool evenly. */
-        if ((battle_rand() % 100) < 50) setup_act2_champ();
-        else setup_act2_automaton();
+        /* The city boss pool is the Champ, the Automaton or the Collector. */
+        int roll = (int)(battle_rand() % 100);
+        if (roll < 34) setup_act2_champ();
+        else if (roll < 67) setup_act2_automaton();
+        else setup_act2_collector();
         return;
     }
     if (kind == NODE_MONSTER) {
@@ -1194,7 +1299,7 @@ static void on_enemy_death(int index) {
     }
     /* BronzeAutomaton.die(): every other living monster in the room dies with
      * it. */
-    if (e->moves == AUTOMATON_MOVES) {
+    if (e->moves == AUTOMATON_MOVES || e->moves == COLLECTOR_MOVES) {
         for (int j = 0; j < g_battle.enemy_count; j++) {
             if (j == index) continue;
             if (g_battle.enemies[j].hp > 0) {
@@ -2343,8 +2448,9 @@ static void enemy_take_turn(int i) {
             e->strength += move->value2;
             break;
         case MOVE_SPAWN:
-            /* BronzeAutomaton Spawn Orbs: two BronzeOrbs join the fight. */
-            spawn_automaton_orbs(i);
+            /* BronzeAutomaton Spawn Orbs, or the Collector's two Torch Heads. */
+            if (e->moves == COLLECTOR_MOVES) spawn_collector_heads(i);
+            else spawn_automaton_orbs(i);
             break;
         case MOVE_STASIS:
             /* BronzeOrb Stasis: steal one card until the orb dies. */
@@ -2360,6 +2466,27 @@ static void enemy_take_turn(int i) {
             }
             break;
         }
+        case MOVE_RALLY:
+            /* Collector Buff: +15 block for itself, +3 Strength to every living
+             * monster in the room (ApplyPowerAction over monster group). */
+            e->block += move->value;
+            for (int j = 0; j < g_battle.enemy_count; j++) {
+                if (g_battle.enemies[j].hp > 0)
+                    g_battle.enemies[j].strength += move->value2;
+            }
+            break;
+        case MOVE_CURSE:
+            /* Collector Mega Debuff: 3 Weak, 3 Vulnerable and 3 Frail.  Frail
+             * was just applied, so its first end-of-round decrement is skipped. */
+            g_battle.weak += move->value;
+            g_battle.vulnerable += move->value;
+            g_battle.frail += move->value;
+            g_battle.frail_just = 1;
+            e->used_ult = 1;
+            break;
+        case MOVE_REVIVE:
+            revive_collector_heads(i);
+            break;
         case MOVE_DRAIN:
             /* Chosen Drain: player 3 Weak, itself +3 Strength. */
             g_battle.weak += move->value;
@@ -2413,6 +2540,9 @@ static void enemy_take_turn(int i) {
         default:
             break;
         }
+        /* TheCollector.takeTurn increments turnsTaken after the action; the
+         * following getMove sees the new value. */
+        if (e->moves == COLLECTOR_MOVES) e->ai_turn++;
         if (!custom_roll) {
             e->last_before = e->last_move;
             e->last_move = e->move_index;
@@ -2470,6 +2600,23 @@ void battle_test_spawn_automaton(void) {
     g_battle.phase = PHASE_PLAYER;
     g_battle.pending_split = -1;
     setup_act2_automaton();
+}
+
+void battle_test_spawn_collector(void) {
+    memset(&g_battle, 0, sizeof(g_battle));
+    g_battle.hp = 80;
+    g_battle.max_hp = 80;
+    g_battle.energy = 3;
+    g_battle.max_energy = 3;
+    g_battle.phase = PHASE_PLAYER;
+    g_battle.pending_split = -1;
+    setup_act2_collector();
+}
+
+/* Card tests need to kill a minion (or the boss) without constructing a hand. */
+void battle_test_damage_enemy(int index, int amount) {
+    if (index < 0 || index >= g_battle.enemy_count) return;
+    (void)damage_enemy_typed(index, amount, 0);
 }
 
 void battle_test_spawn_slavers(void) {

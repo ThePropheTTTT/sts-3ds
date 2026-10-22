@@ -52,6 +52,8 @@ SPINE = [
     ("红奴隶贩子", "images/monsters/theBottom/redSlaver"),
     ("奴隶头子", "images/monsters/theCity/slaverMaster"),
     ("铜制机械人偶", "images/monsters/theCity/automaton"),
+    ("收藏家", "images/monsters/theCity/collector"),
+    ("火炬头", "images/monsters/theCity/torchHead"),
 ]
 
 # Kept separate and appended after the Spine loop so the existing 0..18 sprite
