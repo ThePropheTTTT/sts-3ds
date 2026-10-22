@@ -135,3 +135,14 @@ build/hello3ds.elf    1264668 bytes  EXEC / ARM / entry 0x100000
 - 还没有 `make`（也不影响当前构建，但正式工程建议补上，或改用已装好的 `3ds-cmake` 工具链文件）。
 - `.3dsx` 没有 SMDH（hbmenu 里会显示成无图标/无标题的那一项）。正式发布前用 `smdhtool` 生成 `.smdh` 并加 `--smdh=` 参数。
 - 只验证了「能编出合法 3dsx」，**没有在真机/Citra 上跑过**——第一次上机若崩，先怀疑 `consoleInit` 与 citro2d 共存、以及 `C2D_DrawCircleSolid` 的状态切换。
+
+## 模拟器输入的边界
+
+Azahar 的 `GRenderWindow::mousePressEvent` 会直接忽略 `Qt::MouseEventSynthesizedBySystem`。从主机发 `PostMessage`/`SendMessage` 鼠标消息、`mouse_event` 或 `SendInput`，在 Qt 看来都是合成鼠标，因此无法用它们验收触屏拖牌；Windows 的 `InitializeTouchInjection`/`InjectTouchInput` 在当前会话也会返回 87/5（参数错误/拒绝访问）。触屏请在真机上用手写笔/手指验收。
+
+为了在 CI 式截图里仍然覆盖这条路径，`CARD_TEST=1` 构建保留了合成触摸入口（仅测试构建编译，出货包不含）：
+
+- 报告屏按 `B` 循环 Automaton / Collector / Gremlin Leader，`SELECT` 从战斗回到报告；
+- 战斗屏按 `X` 从第三张牌开始拖动并把目标切到 0 号敌人槽，按 `Y` 在该目标上松手出牌，按 `B` 把手牌放回扇形取消。
+
+这组按键走的是和硬件相同的 `handle_touch_fight()`/`touchPosition` 路径，能验证“牌跟随手指、目标框/文字随横移切换、放回手牌不扣能量”。

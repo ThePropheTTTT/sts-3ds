@@ -7,7 +7,11 @@ composited in draw order, and the result becomes a normal sprite.
 
 This is an approximation: region offsets inside the atlas are applied as Spine
 2.x does (bottom-centre origin), bones are evaluated with translation, rotation
-and scale, and animations are ignored.
+and scale, and animations are ignored.  When the game's bundled jjs runtime is
+available (STS_JJS, or jre/bin/jjs next to the jar), the setup pose is evaluated
+by the real Spine runtime first; that fixes many IK/path/transform-driven
+parts (horns, weapons, claws), though a few rigs still differ from the in-game
+idle pose.  Without jjs we fall back to the rest pose.
 
     python tools/bake_spine.py --monster images/monsters/theBottom/slimeM
 """
@@ -15,10 +19,14 @@ and scale, and animations are ignored.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import json
 import math
 import os
+import shutil
+import subprocess
+import tempfile
 import zipfile
 
 import numpy as np
@@ -103,6 +111,88 @@ def parse_atlas(text):
     return regions
 
 
+def _jjs_path():
+    """The game ships a Java 8 runtime with jjs; use it to evaluate constraints."""
+    explicit = os.environ.get("STS_JJS")
+    if explicit:
+        return explicit if os.path.exists(explicit) else None
+    jar_dir = os.path.dirname(os.path.abspath(JAR))
+    for name in ("jjs.exe", "jjs"):
+        candidate = os.path.join(jar_dir, "jre", "bin", name)
+        if os.path.exists(candidate):
+            return candidate
+    return shutil.which("jjs")
+
+
+def _pose_from_runtime(monster_dir, skeleton_bytes):
+    """Evaluate the setup pose once with the game's Spine runtime.
+
+    The hand-rolled matrix walk below ignores IK/path/transform constraints.  That
+    is enough for simple rigs but leaves claws, weapons and horns at their rest
+    positions on the gremlins.  If jjs is available, run the real runtime and
+    cache the bone matrices.  Returns {name: (a, b, c, d, x, y)} or None.
+    """
+    jjs = _jjs_path()
+    script = os.path.join(HERE, "tools", "spine_bones.js")
+    if not jjs or not os.path.exists(script) or not os.path.exists(JAR):
+        return None
+    cache_dir = os.environ.get(
+        "STS_SPINE_CACHE", os.path.join(HERE, ".tmp", "spine_poses")
+    )
+    os.makedirs(cache_dir, exist_ok=True)
+    digest = hashlib.sha1()
+    digest.update(skeleton_bytes)
+    digest.update(os.path.abspath(JAR).encode("utf-8"))
+    cache_path = os.path.join(cache_dir, digest.hexdigest() + ".json")
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "r", encoding="utf-8") as fh:
+                items = json.load(fh)
+            return {
+                item["name"]: (item["a"], item["c"], item["b"], item["d"], item["x"], item["y"])
+                for item in items
+            }
+        except (OSError, ValueError, KeyError):
+            pass
+
+    tmp_in = tmp_out = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as fh:
+            fh.write(skeleton_bytes)
+            tmp_in = fh.name
+        tmp_out = tmp_in + ".out.json"
+        cmd = [
+            jjs,
+            "-cp",
+            os.path.abspath(JAR),
+            "-Dspine_skeleton=" + tmp_in,
+            "-Dspine_out=" + tmp_out,
+            script,
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if proc.returncode != 0 or not os.path.exists(tmp_out):
+            print("spine runtime failed for", monster_dir, proc.stderr.strip()[:200])
+            return None
+        with open(tmp_out, "r", encoding="utf-8") as fh:
+            items = json.load(fh)
+        with open(cache_path, "w", encoding="utf-8") as fh:
+            json.dump(items, fh)
+        return {
+            item["name"]: (item["a"], item["c"], item["b"], item["d"], item["x"], item["y"])
+            for item in items
+        }
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError) as exc:
+        print("spine runtime failed for", monster_dir, str(exc)[:200])
+        return None
+    finally:
+        for path in (tmp_in, tmp_out):
+            if path and os.path.exists(path):
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+
+
 def bake(monster_dir, page_images, out_size=96):
     with zipfile.ZipFile(JAR) as zf:
         names = zf.namelist()
@@ -126,9 +216,9 @@ def bake(monster_dir, page_images, out_size=96):
                 ).convert("RGBA")
             return page_images[key]
 
-        # Bone world transforms in the setup pose.  The game drives some limbs
-        # through IK/path constraints, but evaluating them once without the
-        # animations distorts the pose; the rest pose is what the sprites show.
+        # Bone world transforms, starting from the rest pose.  Rigid skeletons
+        # match the game directly; constrained rigs (gremlin claws, weapons,
+        # horns) are then replaced by the setup pose from the real runtime.
         world = {}
         for bone in skeleton["bones"]:
             sx = bone.get("scaleX", 1.0)
@@ -144,6 +234,20 @@ def bake(monster_dir, page_images, out_size=96):
             )
             parent = bone.get("parent")
             world[bone["name"]] = mat_mul(world[parent], local) if parent else local
+
+        pose = _pose_from_runtime(monster_dir, zf.read(jpath))
+        if pose:
+            world.update(pose)
+
+        # Optional diagnostic override: a bone dump produced by the game's own
+        # Spine runtime (tools/spine_bones.js), used while checking constraints.
+        bones_override = os.environ.get("STS_SPINE_BONES")
+        if bones_override:
+            with open(bones_override, "r", encoding="utf-8") as fh:
+                for item in json.load(fh):
+                    # The rest of this file uses the transposed (column-vector)
+                    # matrix [a c; b d]; Spine's a/b/c/d are the other way round.
+                    world[item["name"]] = (item["a"], item["c"], item["b"], item["d"], item["x"], item["y"])
 
         canvas = Image.new("RGBA", (CANVAS * 2, CANVAS * 2), (0, 0, 0, 0))
         cx = cy = CANVAS  # skeleton origin sits in the middle

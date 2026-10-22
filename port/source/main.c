@@ -170,6 +170,7 @@ static struct {
     int target;
     int activated;
     int rise;
+    int x, y;   /* current touch position, so the card can follow the finger */
 } s_drag;
 
 /* A short card-lift when a card is played: the card is resolved immediately,
@@ -2316,11 +2317,16 @@ static void draw_bottom_fight(void) {
     }
 
     if (s_drag.active && s_drag.activated && s_drag.card < g_battle.hand_count) {
-        /* The dragged copy floats over the hand detail panel and its text, so it
-         * takes a slice above the fixed 0.7 used for that text (the debug
-         * overlay at 0.90 stays on top). */
+        /* The dragged card follows the finger.  Keep the finger in the lower part
+         * of the card so the art stays visible, and clamp it to the screen. */
+        int dx = s_drag.x - 42;
+        int dy = s_drag.y - 88;
+        if (dx < 0) dx = 0;
+        if (dx > BOT_W - 84) dx = BOT_W - 84;
+        if (dy < 0) dy = 0;
+        if (dy > BOT_H - 116) dy = BOT_H - 116;
         draw_card_at(battle_hand_card(s_drag.card), battle_hand_up(s_drag.card),
-                     (float)(BOT_W / 2 - 42), 118.0f, 84.0f, 116.0f, 1, 0.72f, g_battle.energy, 0.0f);
+                     (float)dx, (float)dy, 84.0f, 116.0f, 1, 0.72f, g_battle.energy, 0.0f);
     }
 
     if (s_play_fx.active && s_play_fx.ttl > 0) {
@@ -2707,6 +2713,8 @@ static void handle_touch_fight(touchPosition *touch, int down) {
             int rise = s_drag.start_y - touch->py;
             s_drag.activated = rise >= TOUCH_ACTIVATE_PX;
             s_drag.rise = rise;
+            s_drag.x = touch->px;
+            s_drag.y = touch->py;
             if (s_drag.activated) {
                 int steps = (touch->px - s_drag.start_x) / TOUCH_SWITCH_PX;
                 int picked = s_drag.lock + steps;
@@ -2743,6 +2751,8 @@ static void handle_touch_fight(touchPosition *touch, int down) {
             s_drag.target = s_drag.lock;
             s_drag.activated = 0;
             s_drag.rise = 0;
+            s_drag.x = touch->px;
+            s_drag.y = touch->py;
             s_focus = slot;
         }
         return;
@@ -2754,7 +2764,13 @@ static void handle_touch_fight(touchPosition *touch, int down) {
         return;
     }
     if (s_drag.active) {
+        int cancel = 0;
         if (s_drag.activated) {
+            int slot;
+            /* Released back over the fan: put the card down instead of playing it. */
+            if (hand_hit(touch->px, touch->py, &slot)) cancel = 1;
+        }
+        if (s_drag.activated && !cancel) {
             int inside = touch->px > TOUCH_EDGE_PX && touch->px < BOT_W - TOUCH_EDGE_PX &&
                          touch->py > TOUCH_EDGE_PX && touch->py < BOT_H - TOUCH_EDGE_PX;
             if (inside && s_drag.card < g_battle.hand_count) {
@@ -2769,6 +2785,47 @@ static void handle_touch_fight(touchPosition *touch, int down) {
         s_drag.activated = 0;
     }
 }
+
+#if defined(CARD_TEST)
+/* Azahar ignores synthesised mouse input (GRenderWindow returns early for
+ * Qt::MouseEventSynthesizedBySystem), and Windows refuses touch injection in
+ * this session, so the touch controls cannot be driven from the host.  These
+ * helpers feed the same touchPosition path the hardware uses; X starts a drag
+ * from the third card, Y releases it on the first enemy, B releases it back
+ * over the fan.  CARD_TEST only: the shipping build never compiles this. */
+static void card_test_touch_begin(void) {
+    if (g_run.screen != SCREEN_FIGHT || s_drag.active) return;
+    if (g_battle.phase != PHASE_PLAYER || g_battle.hand_count < 3) return;
+    float x, y, w, h;
+    hand_slot(2, &x, &y, &w, &h);
+    touchPosition t = {0};
+    t.px = (u16)(x + w * 0.5f);
+    t.py = (u16)(y + h * 0.5f);
+    handle_touch_fight(&t, 1);
+    if (!s_drag.active) return;
+    /* Pull far enough left to switch the target to the first enemy. */
+    t.px = 100;
+    t.py = 56;
+    handle_touch_fight(&t, 1);
+    s_drag.target = 0;
+    s_target = 0;
+}
+
+static void card_test_touch_release(int cancel) {
+    if (!s_drag.active) return;
+    touchPosition t = {0};
+    if (cancel) {
+        float x, y, w, h;
+        hand_slot(2, &x, &y, &w, &h);
+        t.px = (u16)(x + w * 0.5f);
+        t.py = (u16)(y + h * 0.5f);
+    } else {
+        t.px = (u16)s_drag.x;
+        t.py = (u16)s_drag.y;
+    }
+    handle_touch_fight(&t, 0);
+}
+#endif
 
 static void handle_touch(void) {
     static touchPosition touch = {0};
@@ -3191,10 +3248,14 @@ int main(int argc, char **argv) {
          * are exercised too. */
         /* Inside a preview the real battle/picker keys must win: Y ends the
          * turn there, so it cannot also mean "show the Discovery demo". */
-        if (g_run.screen == SCREEN_PICK || g_run.screen == SCREEN_FIGHT ||
-            g_run.screen == SCREEN_EVENT) {
-            if ((g_run.screen == SCREEN_FIGHT || g_run.screen == SCREEN_EVENT) &&
-                (kDown & KEY_SELECT)) card_test_demo_exit();
+        if (g_run.screen == SCREEN_FIGHT) {
+            if (kDown & KEY_SELECT) card_test_demo_exit();
+            else if (kDown & KEY_X) card_test_touch_begin();
+            else if (s_drag.active && (kDown & KEY_Y)) card_test_touch_release(0);
+            else if (s_drag.active && (kDown & KEY_B)) card_test_touch_release(1);
+            else handle_buttons(kDown);
+        } else if (g_run.screen == SCREEN_PICK || g_run.screen == SCREEN_EVENT) {
+            if (g_run.screen == SCREEN_EVENT && (kDown & KEY_SELECT)) card_test_demo_exit();
             else handle_buttons(kDown);
         } else {
             if (kDown & KEY_X) card_test_demo_pick(0);
