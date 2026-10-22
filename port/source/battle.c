@@ -284,6 +284,8 @@ static void add_enemy(int slot, const char *name, int hp) {
     e->hp = hp;
     e->max_hp = hp;
     e->first_turn = 1;
+    e->minion_owner = -1;
+    e->stasis_card = -1;
 }
 
 /* Vanilla Act 1 move sets (numbers from the game's own data). */
@@ -372,6 +374,21 @@ static const EnemyMove SLAVER_RED_MOVES[] = {
 };
 static const EnemyMove TASKMASTER_MOVES[] = {
     {MOVE_WOUND, 7, 1, 0},         /* Scouring Whip: 7 + a Wound */
+};
+/* BronzeAutomaton.java: ids shifted to indexes.  0 Flail, 1 Hyper Beam,
+ * 2 Stunned, 3 Spawn Orbs, 4 Boost. */
+static const EnemyMove AUTOMATON_MOVES[] = {
+    {MOVE_MULTI, 7, 2, 0},         /* Flail: two hits of 7 */
+    {MOVE_ATTACK, 45, 0, 0},       /* Hyper Beam */
+    {MOVE_STUN, 0, 0, 0},          /* Stunned */
+    {MOVE_SPAWN, 0, 0, 0},         /* Spawn Orbs */
+    {MOVE_DEFEND_BUFF, 9, 3, 0},   /* Boost: +9 block, +3 Strength */
+};
+/* BronzeOrb.java: 0 Beam, 1 Support Beam, 2 Stasis. */
+static const EnemyMove BRONZE_ORB_MOVES[] = {
+    {MOVE_ATTACK, 8, 0, 0},        /* Beam: 8 damage */
+    {MOVE_SUPPORT, 12, 0, 0},      /* Support Beam: owner +12 block */
+    {MOVE_STASIS, 0, 0, 0},        /* Stasis: steal a card */
 };
 static const EnemyMove BOSS_MOVES[] = {
     {MOVE_ATTACK, 35, 0, 0},       /* Slam */
@@ -735,6 +752,51 @@ static void choose_move_roll(Enemy *e, unsigned int roll) {
         return;
     }
 
+    /* BronzeAutomaton.getMove (BronzeAutomaton.java:177-203).  numTurns is
+     * e->ai_turn; Hyper Beam fires when it reaches 4, then Stunned, then the
+     * Flail/Boost loop begins again. */
+    if (e->moves == AUTOMATON_MOVES) {
+        if (e->first_turn) {
+            e->first_turn = 0;
+            e->move_index = 3;             /* Spawn Orbs */
+            return;
+        }
+        if (e->ai_turn == 4) {
+            e->ai_turn = 0;
+            e->move_index = 1;             /* Hyper Beam */
+            return;
+        }
+        if (e->last_move == 1) {
+            e->move_index = 2;             /* Stunned after Hyper Beam */
+            return;
+        }
+        if (e->last_move == 2 || e->last_move == 3 || e->last_move == 4 ||
+            e->last_move == 255) {
+            e->ai_turn++;
+            e->move_index = 0;             /* Flail */
+            return;
+        }
+        e->ai_turn++;
+        e->move_index = 4;                 /* Boost */
+        return;
+    }
+
+    /* BronzeOrb.getMove (BronzeOrb.java:104-130).  Stasis once, Support on a
+     * high roll unless it just supported twice, otherwise Beam. */
+    if (e->moves == BRONZE_ORB_MOVES) {
+        if (!e->used_stasis && roll >= 25) {
+            e->used_stasis = 1;
+            e->move_index = 2;
+            return;
+        }
+        if (roll >= 70 && !last_two(e, 1)) {
+            e->move_index = 1;
+            return;
+        }
+        e->move_index = last_two(e, 0) ? 1 : 0;
+        return;
+    }
+
     /* SlaverRed.getMove: scripted Stab on turn one, one Entangle, then Scrape
      * whenever it has not just been used twice. */
     if (e->moves == SLAVER_RED_MOVES) {
@@ -849,6 +911,56 @@ static void setup_act2_slavers(void) {
     g_battle.enemy_count = 3;
 }
 
+/* The Champ (Champ.java).  Kept separate so the boss pool can choose it. */
+static void setup_act2_champ(void) {
+    add_enemy(0, "勇者", 420);
+    Enemy *e = &g_battle.enemies[0];
+    e->moves = CHAMP_MOVES;
+    e->move_count = 7;
+    e->last_move = 255;
+    e->last_before = 255;
+    choose_move(e);
+    g_battle.enemy_count = 1;
+}
+
+/* BronzeAutomaton.java.  It opens with Spawn Orbs and fights alone until the
+ * two BronzeOrbs are summoned. */
+static void setup_act2_automaton(void) {
+    add_enemy(0, "铜制机械人偶", 300);
+    Enemy *e = &g_battle.enemies[0];
+    e->moves = AUTOMATON_MOVES;
+    e->move_count = 5;
+    e->artifact = 3;               /* ArtifactPower(3) */
+    e->draw_x = 160;
+    e->draw_w = 80;
+    e->last_move = 255;
+    e->last_before = 255;
+    choose_move(e);                /* first turn: Spawn Orbs */
+    g_battle.enemy_count = 1;
+}
+
+/* BronzeOrb.java.  Summoned by Spawn Orbs; the left/right positions are the
+ * game's own (-300, 200) and (200, 130) offsets scaled onto the top screen. */
+static void spawn_automaton_orbs(int boss_index) {
+    if (g_battle.enemy_count >= 3) return;
+    for (int k = 0; k < 2; k++) {
+        int slot = 1 + k;
+        add_enemy(slot, "铜球", 52 + (int)(battle_rand() % 7));
+        Enemy *orb = &g_battle.enemies[slot];
+        orb->art = "铜球";
+        orb->moves = BRONZE_ORB_MOVES;
+        orb->move_count = 3;
+        orb->minion_owner = (signed char)boss_index;
+        orb->draw_x = k == 0 ? 100 : 288;
+        orb->draw_w = 52;
+        orb->first_turn = 0;
+        orb->last_move = 255;
+        orb->last_before = 255;
+        choose_move(orb);
+    }
+    g_battle.enemy_count = 3;
+}
+
 /* Act 2 (The City). HP and move values come from the city monster sources. */
 static void setup_act2(int kind) {
     g_battle.enemy_count = 0;
@@ -873,14 +985,11 @@ static void setup_act2(int kind) {
         return;
     }
     if (kind == NODE_BOSS) {
-        add_enemy(0, "勇者", 420);
-        Enemy *e = &g_battle.enemies[0];
-        e->moves = CHAMP_MOVES;
-        e->move_count = 7;
-        e->last_move = 255;
-        e->last_before = 255;
-        choose_move(e);
-        g_battle.enemy_count = 1;
+        /* The city boss pool is the Champ, the Automaton or the Collector.
+         * The Collector is not implemented yet, so the two finished bosses
+         * split the pool evenly. */
+        if ((battle_rand() % 100) < 50) setup_act2_champ();
+        else setup_act2_automaton();
         return;
     }
     if (kind == NODE_MONSTER) {
@@ -898,9 +1007,7 @@ static void setup_encounter(int kind) {
 
     if (g_run.act >= 2) {
         setup_act2(kind);
-        if (kind == NODE_BOSS) {
-            /* Act 2's boss is the Champ; setup_act2 already placed him. */
-        }
+        /* setup_act2 already placed the act 2 boss. */
         return;
     }
 
@@ -1071,6 +1178,57 @@ void run_restart(void) { run_start(); }
 static int apply_weak(int amount, int weak) { return weak > 0 ? amount * 3 / 4 : amount; }
 static int apply_vulnerable(int amount, int vulnerable) { return vulnerable > 0 ? amount * 3 / 2 : amount; }
 
+/* StasisPower.onDeath: the stolen card comes back when the orb dies.  A full
+ * hand sends it to the discard pile instead. */
+static void on_enemy_death(int index) {
+    Enemy *e = &g_battle.enemies[index];
+    if (e->death_done) return;
+    e->death_done = 1;
+    if (e->stasis_card >= 0) {
+        if (g_battle.hand_count < 10) {
+            g_battle.hand[g_battle.hand_count++] = e->stasis_card;
+        } else if (g_battle.discard_count < 64) {
+            g_battle.discard[g_battle.discard_count++] = e->stasis_card;
+        }
+        e->stasis_card = -1;
+    }
+    /* BronzeAutomaton.die(): every other living monster in the room dies with
+     * it. */
+    if (e->moves == AUTOMATON_MOVES) {
+        for (int j = 0; j < g_battle.enemy_count; j++) {
+            if (j == index) continue;
+            if (g_battle.enemies[j].hp > 0) {
+                g_battle.enemies[j].hp = 0;
+                on_enemy_death(j);
+            }
+        }
+    }
+}
+
+/* ApplyStasisAction: remove a card from the draw pile (or the discard pile when
+ * the draw pile is empty), trying Rare, then Uncommon, then Common, then any
+ * remaining card. */
+static int stasis_take_card(void) {
+    int *pile = g_battle.draw_count > 0 ? g_battle.draw : g_battle.discard;
+    int *count = g_battle.draw_count > 0 ? &g_battle.draw_count : &g_battle.discard_count;
+    int chosen = -1;
+    for (int rarity = 3; rarity >= 1 && chosen < 0; rarity--) {
+        int seen = 0;
+        for (int i = 0; i < *count; i++) {
+            if (sts_cards[CARD_INDEX(pile[i])].rarity == rarity) {
+                seen++;
+                if (rnd() % (unsigned int)seen == 0) chosen = i;
+            }
+        }
+    }
+    if (chosen < 0 && *count > 0) chosen = (int)(rnd() % (unsigned int)*count);
+    if (chosen < 0) return -1;
+    int entry = pile[chosen];
+    for (int i = chosen; i < *count - 1; i++) pile[i] = pile[i + 1];
+    (*count)--;
+    return entry;
+}
+
 /* Damage to an enemy.  thorns = the hit came from Flame Barrier / Bronze
  * Scales: THORNS damage is not halved by Flight and does not spend Flight or
  * Plated Armor stacks (FlightPower/PlatedArmorPower both filter it out).
@@ -1087,6 +1245,7 @@ static int damage_enemy_typed(int index, int amount, int thorns) {
     int lost = amount - absorbed;
     e->hp -= lost;
     if (e->hp < 0) e->hp = 0;
+    if (e->hp <= 0) on_enemy_death(index);
     if (lost > 0 && e->hp > 0) {
         /* FlightPower.onAttacked: lose a stack on every hit that got through,
          * and land (Stunned) when the last one is spent. */
@@ -2178,6 +2337,29 @@ static void enemy_take_turn(int i) {
             }
             break;
         }
+        case MOVE_DEFEND_BUFF:
+            /* BronzeAutomaton Boost: +9 block, +3 Strength. */
+            e->block += move->value;
+            e->strength += move->value2;
+            break;
+        case MOVE_SPAWN:
+            /* BronzeAutomaton Spawn Orbs: two BronzeOrbs join the fight. */
+            spawn_automaton_orbs(i);
+            break;
+        case MOVE_STASIS:
+            /* BronzeOrb Stasis: steal one card until the orb dies. */
+            if (e->stasis_card < 0) e->stasis_card = (short)stasis_take_card();
+            e->used_stasis = 1;
+            break;
+        case MOVE_SUPPORT: {
+            /* BronzeOrb Support Beam: give its owner 12 block. */
+            int owner = e->minion_owner;
+            if (owner >= 0 && owner < g_battle.enemy_count &&
+                g_battle.enemies[owner].hp > 0) {
+                g_battle.enemies[owner].block += move->value;
+            }
+            break;
+        }
         case MOVE_DRAIN:
             /* Chosen Drain: player 3 Weak, itself +3 Strength. */
             g_battle.weak += move->value;
@@ -2249,7 +2431,10 @@ void battle_end_turn(void) {
     /* EntanglePower.atEndOfTurn: the lock is lifted as the turn ends. */
     g_battle.entangled = 0;
     g_battle.phase = PHASE_ENEMY;
-    for (int i = 0; i < g_battle.enemy_count; i++) {
+    /* Enemies summoned during this enemy phase (the Automaton's orbs) do not
+     * act until the next round, so the count is fixed up front. */
+    int enemies_at_start = g_battle.enemy_count;
+    for (int i = 0; i < enemies_at_start; i++) {
         enemy_take_turn(i);
     }
 
@@ -2274,6 +2459,17 @@ void battle_test_spawn_act2(int boss) {
     g_battle.phase = PHASE_PLAYER;
     g_battle.pending_split = -1;
     setup_act2(boss ? NODE_BOSS : NODE_ELITE);
+}
+
+void battle_test_spawn_automaton(void) {
+    memset(&g_battle, 0, sizeof(g_battle));
+    g_battle.hp = 80;
+    g_battle.max_hp = 80;
+    g_battle.energy = 3;
+    g_battle.max_energy = 3;
+    g_battle.phase = PHASE_PLAYER;
+    g_battle.pending_split = -1;
+    setup_act2_automaton();
 }
 
 void battle_test_spawn_slavers(void) {

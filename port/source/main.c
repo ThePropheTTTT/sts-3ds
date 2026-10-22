@@ -69,11 +69,22 @@ static int monster_slot(const char *name) {
 }
 
 /* Three enemies share the top screen: the old 96px pitch put the third one off
- * the right edge.  Narrower boxes keep all three inside 400px. */
-static float enemy_w(void) { return g_battle.enemy_count >= 3 ? 64.0f : (float)ENEMY_W; }
+ * the right edge.  Narrower boxes keep all three inside 400px.  Summoned
+ * enemies (the BronzeOrbs) carry their own positions from battle.c. */
+static float enemy_w(int i) {
+    if (i >= 0 && i < g_battle.enemy_count && g_battle.enemies[i].draw_w > 0)
+        return (float)g_battle.enemies[i].draw_w;
+    return g_battle.enemy_count >= 3 ? 64.0f : (float)ENEMY_W;
+}
 static float enemy_x(int i) {
+    if (i >= 0 && i < g_battle.enemy_count && g_battle.enemies[i].draw_x > 0)
+        return (float)g_battle.enemies[i].draw_x;
     if (g_battle.enemy_count >= 3) return 152.0f + (float)i * 84.0f;
     return (float)(ENEMY_X0 + i * ENEMY_DX);
+}
+static float enemy_side(int i) {
+    float w = enemy_w(i);
+    return w >= 68.0f ? 74.0f : (w >= 60.0f ? 62.0f : 52.0f);
 }
 /* relic_icons.t3x is a 4x4 page of RELIC_ICON px icons (tools/extract_relics.py). */
 #define RELIC_ICON 64.0f
@@ -271,7 +282,7 @@ static int nearest_enemy(int mapped_x) {
     int best_dist = 1 << 30;
     for (int i = 0; i < g_battle.enemy_count; i++) {
         if (g_battle.enemies[i].hp <= 0) continue;
-        int cx = (int)(enemy_x(i) + enemy_w() * 0.5f);
+        int cx = (int)(enemy_x(i) + enemy_w(i) * 0.5f);
         int dist = mapped_x > cx ? mapped_x - cx : cx - mapped_x;
         if (dist < best_dist) {
             best_dist = dist;
@@ -1747,7 +1758,7 @@ static void update_floaters(void) {
         }
         int lost = s_prev_enemy[i].hp - hp;
         int lost_blk = s_prev_enemy[i].block - blk;
-        float cx = enemy_x(i) + enemy_w() * 0.5f;
+        float cx = enemy_x(i) + enemy_w(i) * 0.5f;
         if (lost > 0) spawn_floater(cx, ENEMY_Y + 18.0f, lost, 0);
         else if (lost_blk > 0 && enemy_blocked_ok) spawn_floater(cx, ENEMY_Y + 18.0f, lost_blk, 1);
         s_prev_enemy[i].hp = hp;
@@ -1855,6 +1866,11 @@ static int status_collect(StatusRow *rows, int max) {
                        "免疫负面效果", buff);
         n = status_add(rows, n, max, "壁垒", e->barricade,
                        "格挡在回合开始时不消失", buff);
+        if (e->stasis_card >= 0) {
+            snprintf(buf, sizeof(buf), "静滞  %s",
+                     sts_cards[CARD_INDEX(e->stasis_card)].name);
+            n = status_header(rows, n, max, buf, debuff);
+        }
         if (n == enemy_start) {
             n = status_header(rows, n, max, "  无状态", COL_DIM);
         }
@@ -1937,8 +1953,8 @@ static void draw_hint(void) {
     text_draw(FS_SMALL, hint, x, TOP_H - 14.0f, RGBA(150, 144, 130, 220));
 }
 
-static void debug_creature(float x, float py, float pw, float ph) {
-    rect_frame(x, ENEMY_Y, enemy_w(), ENEMY_H, 1.0f, RGB(0, 255, 90), 0.90f);
+static void debug_creature(float x, float py, float pw, float ph, float ew) {
+    rect_frame(x, ENEMY_Y, ew, ENEMY_H, 1.0f, RGB(0, 255, 90), 0.90f);
     rect_frame(x - 3.0f, py, pw, ph, 1.0f, RGB(255, 0, 255), 0.90f);
     rect_frame(x - 25.0f, ENEMY_Y + ENEMY_H - 25.0f, 22.0f, 22.0f, 1.0f, RGB(255, 255, 0), 0.90f);
     rect_frame(x + 1.0f, POWER_ROW_Y - 2.0f, 3.0f * POWER_PAD_SZ, POWER_ICON_SZ + 4.0f,
@@ -1974,7 +1990,7 @@ static void draw_fight_top(void) {
         Enemy *e = &g_battle.enemies[i];
         if (e->hp <= 0) continue;
         float x = enemy_x(i);
-        float ew = enemy_w();
+        float ew = enemy_w(i);
         int lit = (s_target_mode || s_drag.activated) && s_target == i;
         char intent[48];
         int kind = battle_intent_kind(i);
@@ -2043,6 +2059,23 @@ static void draw_fight_top(void) {
         case MOVE_SUCK:
             snprintf(intent, sizeof(intent), "攻击 %d 吸血", battle_enemy_intent_damage(i));
             break;
+        case MOVE_DEFEND_BUFF:
+            /* BronzeAutomaton Boost: +9 block, +3 Strength. */
+            snprintf(intent, sizeof(intent), "防御 %d 力量 +%d", value, value2);
+            intent_color = RGB(200, 205, 210);
+            break;
+        case MOVE_SPAWN:
+            snprintf(intent, sizeof(intent), "召唤");
+            intent_color = RGB(200, 180, 120);
+            break;
+        case MOVE_STASIS:
+            snprintf(intent, sizeof(intent), "静滞");
+            intent_color = RGB(200, 150, 240);
+            break;
+        case MOVE_SUPPORT:
+            snprintf(intent, sizeof(intent), "支援 %d", value);
+            intent_color = RGB(200, 205, 210);
+            break;
         case MOVE_TAUNT:
             snprintf(intent, sizeof(intent), "虚弱 %d 易伤 %d", value, value2);
             intent_color = RGB(200, 150, 240);
@@ -2098,9 +2131,10 @@ static void draw_fight_top(void) {
                 kind == MOVE_SUCK) {
                 int dmg = battle_enemy_intent_damage(i);
                 icon = dmg <= 4 ? 0 : (dmg <= 9 ? 1 : (dmg <= 14 ? 2 : 3));
-            } else if (kind == MOVE_BUFF || kind == MOVE_ANGER || kind == MOVE_FLY) {
+            } else if (kind == MOVE_BUFF || kind == MOVE_ANGER || kind == MOVE_FLY ||
+                       kind == MOVE_SPAWN) {
                 icon = 5;
-            } else if (kind == MOVE_DEFEND) {
+            } else if (kind == MOVE_DEFEND || kind == MOVE_DEFEND_BUFF || kind == MOVE_SUPPORT) {
                 icon = 4;
             } else {
                 icon = 6;
@@ -2113,7 +2147,7 @@ static void draw_fight_top(void) {
         draw_entity_box(x, ew, e->hp, e->max_hp, e->block, lit, RGB(60, 56, 46));
         int slot = monster_slot(e->art ? e->art : e->name);
         if (slot >= 0 && s_mon_img[slot].tex) {
-            float side = g_battle.enemy_count >= 3 ? 62.0f : 74.0f;
+            float side = enemy_side(i);
             C2D_DrawImageAt(s_mon_img[slot], x + (ew - side) / 2.0f, 104.0f + (64.0f - side) / 2.0f,
                             0.45f, NULL, side / 96.0f, side / 96.0f);
         }
@@ -2129,19 +2163,19 @@ static void draw_fight_top(void) {
         /* Creature boxes, in the same colours as the card debug overlay: green =
          * hitbox, magenta = portrait, yellow = block badge, cyan = power row. */
         float pph = 74.0f * (float)sts_combat_player.h / (float)sts_combat_player.w;
-        debug_creature(PLAYER_BOX_X, ENEMY_Y + 2.0f, 74.0f, pph);
+        debug_creature(PLAYER_BOX_X, ENEMY_Y + 2.0f, 74.0f, pph, 74.0f);
         for (int i = 0; i < g_battle.enemy_count; i++) {
             if (g_battle.enemies[i].hp <= 0) continue;
             float x = enemy_x(i);
-            float side = g_battle.enemy_count >= 3 ? 62.0f : 74.0f;
-            debug_creature(x, 104.0f + (64.0f - side) / 2.0f, side, side);
+            float side = enemy_side(i);
+            debug_creature(x, 104.0f + (64.0f - side) / 2.0f, side, side, enemy_w(i));
         }
     }
 
     draw_floaters();
 
     if ((s_target_mode || s_drag.activated) && s_target >= 0 && s_target < g_battle.enemy_count) {
-        float ex = enemy_x(s_target) + enemy_w() * 0.5f;
+        float ex = enemy_x(s_target) + enemy_w(s_target) * 0.5f;
         float ey = (float)(ENEMY_Y + ENEMY_H / 2);
         float x0 = 200.0f, y0 = (float)TOP_H - 20.0f;
         float cx = (x0 + ex) / 2.0f, cy = ey - 40.0f;
@@ -2814,7 +2848,7 @@ static void handle_buttons(u32 kDown) {
                             s_pending_potion = s_potion_sel;
                             s_detail = 0;
                             s_target_mode = 1;
-                            s_target = nearest_enemy((int)(enemy_x(0) + enemy_w() * 0.5f));
+                            s_target = nearest_enemy((int)(enemy_x(0) + enemy_w(0) * 0.5f));
                         } else {
                             battle_use_potion(s_potion_sel, -1);
                             s_potion_sel = 0;
@@ -2877,7 +2911,7 @@ static void handle_buttons(u32 kDown) {
                 if (s_focus >= g_battle.hand_count) s_focus = g_battle.hand_count > 0 ? g_battle.hand_count - 1 : 0;
             } else if (battle_card_targeted(s_focus)) {
                 s_target_mode = 1;
-                s_target = nearest_enemy((int)(enemy_x(0) + enemy_w() * 0.5f));
+                s_target = nearest_enemy((int)(enemy_x(0) + enemy_w(0) * 0.5f));
             } else {
                 start_play_fx(s_focus);
                 play_card(s_focus, -1);
@@ -3129,7 +3163,7 @@ int main(int argc, char **argv) {
             if (kDown & KEY_LEFT) card_test_demo_fight(4);
             if (kDown & KEY_RIGHT) card_test_demo_fight(5);
             if (kDown & KEY_A) card_test_demo_fight(6);   /* three Slavers */
-            if (kDown & KEY_B) card_test_demo_event(0);
+            if (kDown & KEY_B) card_test_demo_fight(7);   /* BronzeAutomaton */
         }
         update_play_fx();
         update_floaters();

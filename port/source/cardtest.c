@@ -1540,6 +1540,171 @@ static void test_batch9(void) {
     check("rake intent damage", battle_enemy_intent_damage(0), 7);
 }
 
+/* ---- batch 10: BronzeAutomaton and BronzeOrbs --------------------------- */
+
+static void automaton_fresh(void) {
+    battle_test_spawn_automaton();
+    g_run.screen = SCREEN_FIGHT;
+    g_battle.phase = PHASE_PLAYER;
+    g_battle.energy = g_battle.max_energy = 3;
+}
+
+static void test_batch10(void) {
+    Enemy *e;
+
+    /* It opens alone, with Artifact 3 and Spawn Orbs queued. */
+    automaton_fresh();
+    e = &g_battle.enemies[0];
+    check("automaton one", g_battle.enemy_count, 1);
+    check("automaton hp", e->max_hp, 300);
+    check("automaton artifact", e->artifact, 3);
+    check("automaton move count", e->move_count, 5);
+    check("automaton opens spawn", e->move_index, 3);
+    check("automaton spawn intent", battle_intent_kind(0), MOVE_SPAWN);
+    check("automaton draw x", e->draw_x, 160);
+    check("automaton draw w", e->draw_w, 80);
+
+    /* Spawn Orbs: two BronzeOrbs, 52-58 HP, positioned left and right. */
+    g_battle.hp = 80;
+    battle_test_enemy_turn(0);
+    check("automaton spawned two", g_battle.enemy_count, 3);
+    check("automaton spawn no damage", g_battle.hp, 80);
+    check("orb one name", strcmp(g_battle.enemies[1].name, "铜球"), 0);
+    check("orb two name", strcmp(g_battle.enemies[2].name, "铜球"), 0);
+    check("orb one hp", g_battle.enemies[1].max_hp >= 52 && g_battle.enemies[1].max_hp <= 58, 1);
+    check("orb two hp", g_battle.enemies[2].max_hp >= 52 && g_battle.enemies[2].max_hp <= 58, 1);
+    check("orb one owner", g_battle.enemies[1].minion_owner, 0);
+    check("orb one x", g_battle.enemies[1].draw_x, 100);
+    check("orb two x", g_battle.enemies[2].draw_x, 288);
+    check("orb one width", g_battle.enemies[1].draw_w, 52);
+    check("orb no stolen card", g_battle.enemies[1].stasis_card, -1);
+    check("automaton after spawn flail", e->move_index, 0);
+    check("automaton turn one after spawn", e->ai_turn, 1);
+    check("automaton flail hits", battle_intent_hits(0), 2);
+    check("automaton flail damage", battle_enemy_intent_damage(0), 7);
+
+    /* The orbs spawned this enemy phase do not also act in it. */
+    automaton_fresh();
+    g_battle.hp = 80;
+    battle_end_turn();
+    check("spawn turn no orb damage", g_battle.hp, 80);
+    check("spawn turn still three", g_battle.enemy_count, 3);
+    check("spawn turn boss flail", g_battle.enemies[0].move_index, 0);
+
+    /* Flail is two hits of 7; the next move is Boost. */
+    g_battle.hp = 80;
+    battle_test_enemy_turn(0);
+    check("automaton flail total", g_battle.hp, 66);
+    check("automaton boost next", e->move_index, 4);
+    check("automaton turn two", e->ai_turn, 2);
+
+    /* Boost: +9 block, +3 Strength. */
+    e = &g_battle.enemies[0];
+    e->block = 0;
+    e->strength = 0;
+    battle_test_enemy_turn(0);
+    check("automaton boost block", e->block, 9);
+    check("automaton boost strength", e->strength, 3);
+    check("automaton flail after boost", e->move_index, 0);
+
+    /* The full loop: Spawn, Flail, Boost, Flail, Boost, Hyper Beam, Stunned,
+     * then Flail again.  getMove increments numTurns on both Flail and Boost. */
+    automaton_fresh();
+    e = &g_battle.enemies[0];
+    g_battle.hp = 300;
+    battle_test_enemy_turn(0);           /* Spawn Orbs -> Flail */
+    check("loop after spawn", e->move_index, 0);
+    check("loop turn 1", e->ai_turn, 1);
+    battle_test_enemy_turn(0);           /* Flail -> Boost */
+    check("loop turn 2", e->move_index, 4);
+    check("loop turn 2 count", e->ai_turn, 2);
+    battle_test_enemy_turn(0);           /* Boost -> Flail */
+    check("loop turn 3", e->move_index, 0);
+    check("loop turn 3 count", e->ai_turn, 3);
+    battle_test_enemy_turn(0);           /* Flail -> Boost */
+    check("loop turn 4", e->move_index, 4);
+    check("loop turn 4 count", e->ai_turn, 4);
+    battle_test_enemy_turn(0);           /* Boost -> Hyper Beam */
+    check("loop hyper", e->move_index, 1);
+    check("loop hyper count", e->ai_turn, 0);
+    battle_test_enemy_turn(0);           /* Hyper -> Stunned */
+    check("loop stun", e->move_index, 2);
+    battle_test_enemy_turn(0);           /* Stunned -> Flail */
+    check("loop flail again", e->move_index, 0);
+    check("loop flail count", e->ai_turn, 1);
+
+    /* BronzeOrb.getMove: Stasis only once, then Beam/Support. */
+    automaton_fresh();
+    battle_test_enemy_turn(0);
+    e = &g_battle.enemies[1];
+    e->last_move = 255;
+    e->last_before = 255;
+    e->used_stasis = 0;
+    battle_test_choose_roll(1, 50);
+    check("orb stasis", e->move_index, 2);
+    check("orb stasis used", e->used_stasis, 1);
+    battle_test_choose_roll(1, 50);
+    check("orb stasis once", e->move_index != 2, 1);
+
+    /* Stasis removes a card from the draw pile and holds the full entry. */
+    automaton_fresh();
+    battle_test_enemy_turn(0);
+    e = &g_battle.enemies[1];
+    int bash = battle_find_card("Bash");
+    g_battle.draw_count = 0;
+    g_battle.discard_count = 0;
+    g_battle.draw[g_battle.draw_count++] = CARD_ENTRY(bash, 0);
+    e->move_index = 2;
+    e->stasis_card = -1;
+    e->used_stasis = 0;
+    battle_test_enemy_turn(1);
+    check("stasis draw empty", g_battle.draw_count, 0);
+    check("stasis holds card", e->stasis_card, CARD_ENTRY(bash, 0));
+    check("stasis card index", CARD_INDEX(e->stasis_card), bash);
+
+    /* Support Beam gives the Automaton 12 block. */
+    automaton_fresh();
+    battle_test_enemy_turn(0);
+    g_battle.enemies[0].block = 0;
+    g_battle.enemies[1].move_index = 1;
+    battle_test_enemy_turn(1);
+    check("orb support block", g_battle.enemies[0].block, 12);
+
+    /* An orb that dies returns its stolen card to the hand. */
+    automaton_fresh();
+    battle_test_enemy_turn(0);
+    e = &g_battle.enemies[1];
+    bash = battle_find_card("Bash");
+    e->stasis_card = (short)CARD_ENTRY(bash, 0);
+    e->hp = 1;
+    g_battle.hand_count = 0;
+    g_battle.energy = 3;
+    g_battle.phase = PHASE_PLAYER;
+    g_run.screen = SCREEN_FIGHT;
+    hand("Strike_R", 0);
+    battle_play(0, 1);
+    check("stasis orb dead", e->hp, 0);
+    check("stasis card came back", g_battle.hand_count, 1);
+    check("stasis returned bash", CARD_INDEX(g_battle.hand[0]), bash);
+
+    /* The Automaton's death takes both orbs with it. */
+    automaton_fresh();
+    battle_test_enemy_turn(0);
+    e = &g_battle.enemies[0];
+    e->hp = 1;
+    g_battle.enemies[1].hp = 50;
+    g_battle.enemies[2].hp = 50;
+    g_battle.hand_count = 0;
+    g_battle.energy = 3;
+    g_battle.phase = PHASE_PLAYER;
+    g_run.screen = SCREEN_FIGHT;
+    hand("Strike_R", 0);
+    battle_play(0, 0);
+    check("automaton dead", e->hp, 0);
+    check("orb one died with boss", g_battle.enemies[1].hp, 0);
+    check("orb two died with boss", g_battle.enemies[2].hp, 0);
+}
+
 /* ---- picker preview ---------------------------------------------------- */
 
 /* The card-choice screen only appears mid-combat when one of seven cards is
@@ -1602,12 +1767,15 @@ void card_test_demo_fight(int which) {
         "Strike_R", "Defend_R", "Bash", "Strike_R", "Defend_R",
     };
     /* 0 Champ, 1 Book of Stabbing, 2 Byrds, 3 Chosen, 4 Parasite,
-     * 5 Spheric Guardian, 6 the three Slavers.
-     * Same spawn path the real encounter uses, then a hand so the bottom
-     * screen has cards to draw. */
-    if (which < 0 || which > 6) which = 0;
+     * 5 Spheric Guardian, 6 the three Slavers, 7 BronzeAutomaton with its
+     * two summoned orbs.  Same spawn path the real encounter uses, then a
+     * hand so the bottom screen has cards to draw. */
+    if (which < 0 || which > 7) which = 0;
     if (which == 6) battle_test_spawn_slavers();
-    else if (which <= 1) battle_test_spawn_act2(which == 0 ? 1 : 0);
+    else if (which == 7) {
+        battle_test_spawn_automaton();
+        battle_test_enemy_turn(0);   /* Spawn Orbs, then Flail */
+    } else if (which <= 1) battle_test_spawn_act2(which == 0 ? 1 : 0);
     else battle_test_spawn_act2_monster(which - 2);
     g_run.act = 2;     /* display is 1-based: the city */
     g_map.gold = 99;
@@ -1662,6 +1830,21 @@ void card_test_demo_fight(int which) {
         g_battle.enemies[2].move_index = 1;
         g_battle.enemies[2].used_entangle = 0;
         g_battle.entangled = 1;
+    } else if (which == 7) {
+        /* Automaton Flail + left orb Support + right orb Stasis.  Stock the
+         * draw pile so the Stasis turn actually steals a card and the status
+         * panel grows its 静滞 row. */
+        e->move_index = 0;
+        e->ai_turn = 0;
+        g_battle.enemies[1].move_index = 1;
+        g_battle.enemies[2].move_index = 2;
+        g_battle.enemies[2].used_stasis = 0;
+        g_battle.draw_count = 0;
+        const char *draw_ids[] = {"Bash", "Strike_R", "Defend_R"};
+        for (int i = 0; i < 3; i++) {
+            int idx = battle_find_card(draw_ids[i]);
+            if (idx >= 0) g_battle.draw[g_battle.draw_count++] = CARD_ENTRY(idx, 0);
+        }
     }
 }
 
@@ -1693,6 +1876,7 @@ void card_test_run(void) {
     test_batch7();
     test_batch8();
     test_batch9();
+    test_batch10();
     g_run.screen = SCREEN_MAP;
 }
 

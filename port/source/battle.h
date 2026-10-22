@@ -46,6 +46,10 @@ enum {
     MOVE_ATTACK_WEAK,    /* value = damage, value2 = Weak on the player */
     MOVE_ENTANGLE,       /* SlaverRed: EntanglePower, no Attack cards this turn */
     MOVE_WOUND,          /* value = damage, value2 = Wounds shuffled into discard */
+    MOVE_DEFEND_BUFF,    /* value = block for itself, value2 = Strength gained */
+    MOVE_SPAWN,          /* BronzeAutomaton: summon its two BronzeOrbs */
+    MOVE_STASIS,         /* BronzeOrb: steal a card until the orb dies */
+    MOVE_SUPPORT,        /* BronzeOrb: value = block given to its owner */
 };
 
 /* Act 2 uses the same room chances as Act 1 (TheCity.java), so only the
@@ -91,6 +95,12 @@ typedef struct {
     unsigned char used_hex;      /* Chosen: Hex is used exactly once */
     unsigned char second_move;   /* Spheric Guardian: the scripted second move is done */
     unsigned char used_entangle; /* SlaverRed: ENTANGLE is used exactly once */
+    unsigned char used_stasis;   /* BronzeOrb: STASIS is used exactly once */
+    unsigned char death_done;    /* on_death has already run for this enemy */
+    unsigned char draw_w;        /* custom hitbox width, 0 = use the old layout */
+    signed char minion_owner;    /* BronzeOrb: index of its BronzeAutomaton */
+    short stasis_card;           /* BronzeOrb: stolen pile entry, -1 = none */
+    short draw_x;                /* custom hitbox x, 0 = use the old layout */
 } Enemy;
 
 /* Powers the port implements so far.  Vanilla keeps one AbstractPower object
@@ -257,6 +267,7 @@ int battle_power(int id);
 /* Deterministic hooks so the card tests can reach the enemy turn and the AI's
  * roll without waiting for the real turn order. */
 void battle_test_spawn_act2(int boss);
+void battle_test_spawn_automaton(void);
 void battle_test_spawn_slavers(void);
 /* 0 two Byrds, 1 Chosen, 2 Shelled Parasite, 3 Spheric Guardian. */
 void battle_test_spawn_act2_monster(int which);
