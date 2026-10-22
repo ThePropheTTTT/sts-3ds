@@ -53,6 +53,9 @@ enum {
     MOVE_RALLY,          /* Collector: value = own block, value2 = Strength to all */
     MOVE_CURSE,          /* Collector: value = Weak/Vulnerable/Frail on the player */
     MOVE_REVIVE,         /* Collector: bring its dead Torch Heads back */
+    MOVE_COMMAND,        /* Gremlin Leader: value = Strength, value2 = ally block */
+    MOVE_PROTECT,        /* Gremlin Tsundere: value = block to a random ally */
+    MOVE_CHARGE,         /* Gremlin Wizard: charge; at currentCharge 3 it blasts 25 */
 };
 
 /* Act 2 uses the same room chances as Act 1 (TheCity.java), so only the
@@ -182,7 +185,7 @@ typedef struct {
     int turn;
     int phase;
     int enemy_count;
-    Enemy enemies[3];
+    Enemy enemies[4];
     unsigned int rng;
     int temp_strength;
     int pending_split;   /* enemy index waiting to split, -1 = none */   /* from Flex: removed at the end of the player turn */
@@ -273,6 +276,9 @@ int battle_power(int id);
 void battle_test_spawn_act2(int boss);
 void battle_test_spawn_automaton(void);
 void battle_test_spawn_collector(void);
+void battle_test_spawn_gremlin_leader(void);
+/* slot 1..3, which 0 warrior / 1 thief / 2 fat / 3 tsundere / 4 wizard. */
+void battle_test_spawn_gremlin_minion(int slot, int which);
 void battle_test_damage_enemy(int index, int amount);
 void battle_test_spawn_slavers(void);
 /* 0 two Byrds, 1 Chosen, 2 Shelled Parasite, 3 Spheric Guardian. */

@@ -45,40 +45,42 @@ static C2D_SpriteSheet s_act_sheets[3];
 static C2D_Image s_act_img[3];
 static C2D_SpriteSheet s_mon_sheet;
 static C2D_SpriteSheet s_mon_sheet_ref;
-static C2D_Image s_mon_img[23];
-static Tex3DS_SubTexture s_mon_subs[23];
+static C2D_Image s_mon_img[29];
+static Tex3DS_SubTexture s_mon_subs[29];
 
-/* Only these monsters ship in the jar as a single full image; the rest are
- * Spine atlases that would need to be assembled first. */
-/* 512x512 page produced by tools/extract_monsters.py (5x5 cells of 96px).
+/* 1024x512 page produced by tools/extract_monsters.py (8x4 cells of 96px).
  * NULL means the bake did not look right yet, so the placeholder box is used. */
-static const char *MON_KEYS[23] = {
+static const char *MON_KEYS[29] = {
     "球体守卫", "史莱姆老大", "勇者", "酸液史莱姆",
     "尖刺史莱姆", "颚虫", "地精大块头", "红虱虫",
     "真菌怪", "邪教徒", "寄生兽", "异鸟",
     "天选者", "大书怪", "牧师", "坦克",
     "蓝奴隶贩子", "红奴隶贩子", "奴隶头子",
-    "铜制机械人偶", "收藏家", "火炬头", "铜球",
+    "铜制机械人偶", "收藏家", "火炬头",
+    "地精首领", "火大地精", "卑鄙地精", "胖地精", "持盾地精", "地精法师",
+    "铜球",
 };
 
 static int monster_slot(const char *name) {
-    for (int i = 0; i < 23; i++) {
+    for (int i = 0; i < 29; i++) {
         if (MON_KEYS[i] && strcmp(name, MON_KEYS[i]) == 0) return i;
     }
     return -1;
 }
 
-/* Three enemies share the top screen: the old 96px pitch put the third one off
- * the right edge.  Narrower boxes keep all three inside 400px.  Summoned
- * enemies (the BronzeOrbs) carry their own positions from battle.c. */
+/* Up to four enemies share the top screen.  Narrower boxes keep all four
+ * inside 400px; the Gremlin Leader fight and summoned enemies carry their own
+ * positions from battle.c. */
 static float enemy_w(int i) {
     if (i >= 0 && i < g_battle.enemy_count && g_battle.enemies[i].draw_w > 0)
         return (float)g_battle.enemies[i].draw_w;
+    if (g_battle.enemy_count >= 4) return 54.0f;
     return g_battle.enemy_count >= 3 ? 64.0f : (float)ENEMY_W;
 }
 static float enemy_x(int i) {
     if (i >= 0 && i < g_battle.enemy_count && g_battle.enemies[i].draw_x > 0)
         return (float)g_battle.enemies[i].draw_x;
+    if (g_battle.enemy_count >= 4) return 120.0f + (float)i * 68.0f;
     if (g_battle.enemy_count >= 3) return 152.0f + (float)i * 84.0f;
     return (float)(ENEMY_X0 + i * ENEMY_DX);
 }
@@ -147,7 +149,7 @@ static int s_event_sel;
 static int s_detail;
 static int s_pick_sel;
 #if defined(CARD_TEST)
-static int s_boss_demo = 7;   /* CARD_TEST report: B cycles Automaton/Collector */
+static int s_boss_demo = 7;   /* CARD_TEST report: B cycles Automaton/Collector/Leader */
 #endif
 static int s_panel_tab;
 static int s_panel_scroll;
@@ -393,15 +395,15 @@ static void load_art(void) {
     if (s_mon_sheet) {
         C2D_Image img = C2D_SpriteSheetGetImage(s_mon_sheet, 0);
         s_vis_tex = s_vis_tex ? s_vis_tex : img.tex;
-        for (int i = 0; i < 23; i++) {
+        for (int i = 0; i < 29; i++) {
             C2D_Image one = {img.tex, NULL};
             Tex3DS_SubTexture *sub = &s_mon_subs[i];
-            float x = (float)((i % 5) * 96);
-            float y = (float)((i / 5) * 96);
+            float x = (float)((i % 8) * 96);
+            float y = (float)((i / 8) * 96);
             sub->width = 96;
             sub->height = 96;
-            sub->left = x / 512.0f;
-            sub->right = (x + 96.0f) / 512.0f;
+            sub->left = x / 1024.0f;
+            sub->right = (x + 96.0f) / 1024.0f;
             sub->top = 1.0f - y / 512.0f;
             sub->bottom = 1.0f - (y + 96.0f) / 512.0f;
             s_mon_img[i].tex = img.tex;
@@ -1691,7 +1693,7 @@ typedef struct {
 static Floater s_floaters[FLOATER_MAX];
 static int s_fl_next;
 static struct { int hp, block, valid; } s_prev_player;
-static struct { int hp, block, valid; } s_prev_enemy[3];
+static struct { int hp, block, valid; } s_prev_enemy[4];
 
 #define PLAYER_BOX_X 36.0f
 
@@ -1724,7 +1726,7 @@ static void update_floaters(void) {
 
     if (g_run.screen != SCREEN_FIGHT) {
         s_prev_player.valid = 0;
-        for (int i = 0; i < 3; i++) s_prev_enemy[i].valid = 0;
+        for (int i = 0; i < 4; i++) s_prev_enemy[i].valid = 0;
         return;
     }
     /* Block that simply expires at the start of a turn is not a block hit: the
@@ -1749,7 +1751,7 @@ static void update_floaters(void) {
         s_prev_player.block = g_battle.block;
     }
 
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
         int alive = i < g_battle.enemy_count && g_battle.enemies[i].hp > 0;
         int hp = alive ? g_battle.enemies[i].hp : 0;
         int blk = alive ? g_battle.enemies[i].block : 0;
@@ -2093,6 +2095,20 @@ static void draw_fight_top(void) {
             snprintf(intent, sizeof(intent), "复活");
             intent_color = RGB(200, 180, 120);
             break;
+        case MOVE_COMMAND:
+            /* Gremlin Leader Encourage: the original intent is a plain BUFF
+             * icon; the numbers land on the status rows after the move. */
+            snprintf(intent, sizeof(intent), "强化");
+            intent_color = RGB(200, 180, 120);
+            break;
+        case MOVE_PROTECT:
+            snprintf(intent, sizeof(intent), "保护 %d", value);
+            intent_color = RGB(200, 205, 210);
+            break;
+        case MOVE_CHARGE:
+            snprintf(intent, sizeof(intent), "蓄能");
+            intent_color = RGB(170, 200, 230);
+            break;
         case MOVE_TAUNT:
             snprintf(intent, sizeof(intent), "虚弱 %d 易伤 %d", value, value2);
             intent_color = RGB(200, 150, 240);
@@ -2149,10 +2165,12 @@ static void draw_fight_top(void) {
                 int dmg = battle_enemy_intent_damage(i);
                 icon = dmg <= 4 ? 0 : (dmg <= 9 ? 1 : (dmg <= 14 ? 2 : 3));
             } else if (kind == MOVE_BUFF || kind == MOVE_ANGER || kind == MOVE_FLY ||
-                       kind == MOVE_SPAWN || kind == MOVE_REVIVE) {
+                       kind == MOVE_SPAWN || kind == MOVE_REVIVE ||
+                       kind == MOVE_COMMAND || kind == MOVE_CHARGE) {
                 icon = 5;
             } else if (kind == MOVE_DEFEND || kind == MOVE_DEFEND_BUFF ||
-                       kind == MOVE_SUPPORT || kind == MOVE_RALLY) {
+                       kind == MOVE_SUPPORT || kind == MOVE_RALLY ||
+                       kind == MOVE_PROTECT) {
                 icon = 4;
             } else {
                 icon = 6;
@@ -2160,7 +2178,17 @@ static void draw_fight_top(void) {
             C2D_Image ic = {s_vis_tex, &s_intent[icon]};
             C2D_DrawImageAt(ic, x + 2.0f, 60.0f, 0.66f, NULL, 20.0f / 24.0f, 20.0f / 24.0f);
         }
-        text_draw(FS_SMALL, intent, intent[0] ? x + 24 : x + 2, 64, intent_color);
+        /* Four-enemy fights put the leader on the right.  Its line gets a row
+         * above the others so the third Gremlin's longer intent does not run
+         * straight into it; right-align it to the box. */
+        float ix = x + 24.0f, iy = 64.0f;
+        if (g_battle.enemy_count >= 4 && x >= 300.0f && intent[0]) {
+            float tw = text_width(FS_SMALL, intent);
+            ix = x + ew - tw;
+            iy = 46.0f;
+            if (ix < 2.0f) ix = 2.0f;
+        }
+        text_draw(FS_SMALL, intent, intent[0] ? ix : x + 2, iy, intent_color);
         text_draw(FS_SMALL, e->name, x, 84, COL_DIM);
         draw_entity_box(x, ew, e->hp, e->max_hp, e->block, lit, RGB(60, 56, 46));
         int slot = monster_slot(e->art ? e->art : e->name);
@@ -3181,10 +3209,11 @@ int main(int argc, char **argv) {
             if (kDown & KEY_LEFT) card_test_demo_fight(4);
             if (kDown & KEY_RIGHT) card_test_demo_fight(5);
             if (kDown & KEY_A) card_test_demo_fight(6);   /* three Slavers */
-            /* B alternates the two act 2 bosses: Automaton (7), Collector (8). */
+            /* B cycles the act 2 set pieces: Automaton (7), Collector (8),
+             * Gremlin Leader (9). */
             if (kDown & KEY_B) {
                 card_test_demo_fight(s_boss_demo);
-                s_boss_demo = s_boss_demo == 7 ? 8 : 7;
+                s_boss_demo = s_boss_demo == 7 ? 8 : (s_boss_demo == 8 ? 9 : 7);
             }
         }
         update_play_fx();

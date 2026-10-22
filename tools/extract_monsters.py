@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Bake the monster sprites the port uses into one 512x512 page.
+"""Bake the monster sprites the port uses into one 1024x512 page.
 
 Some monsters ship as a single PNG; the rest (every Act 1 small monster) only
 exist as Spine skeletons, so they are flattened to a static pose first by
-tools/bake_spine.py and then packed here.
+tools/bake_spine.py and then packed here.  Eight 96px columns x four rows
+hold 32 sprites; the free cells leave room for the next act's monsters.
 
-    python tools/extract_monsters.py    -> assets/monsters.png (512x512, 5x5 cells)
+    python tools/extract_monsters.py    -> assets/monsters.png (1024x512, 8x4 cells)
 """
 
 from __future__ import annotations
@@ -54,17 +55,23 @@ SPINE = [
     ("铜制机械人偶", "images/monsters/theCity/automaton"),
     ("收藏家", "images/monsters/theCity/collector"),
     ("火炬头", "images/monsters/theCity/torchHead"),
+    ("地精首领", "images/monsters/theCity/gremlinleader"),
+    ("火大地精", "images/monsters/theBottom/angryGremlin"),
+    ("卑鄙地精", "images/monsters/theBottom/thiefGremlin"),
+    ("胖地精", "images/monsters/theBottom/fatGremlin"),
+    ("持盾地精", "images/monsters/theBottom/femaleGremlin"),
+    ("地精法师", "images/monsters/theBottom/wizardGremlin"),
 ]
 
-# Kept separate and appended after the Spine loop so the existing 0..18 sprite
-# indexes do not move when a new single-image monster is added.
+# Kept separate and appended after the Spine loop so the earlier sprite indexes
+# do not move when a new single-image monster is added.
 EXTRA_IMAGES = [
     ("铜球", "images/monsters/theCity/automaton/orb.png"),
 ]
 
 
 def main() -> int:
-    page = Image.new("RGBA", (512, 512), (0, 0, 0, 0))  # power-of-two: 3DS textures need it
+    page = Image.new("RGBA", (1024, 512), (0, 0, 0, 0))  # power-of-two: 3DS textures need it
     index = 0
 
     with zipfile.ZipFile(JAR) as zf:
@@ -75,8 +82,8 @@ def main() -> int:
                 im = im.crop(bbox)
             scale = min((CELL - 6) / im.width, (CELL - 6) / im.height)
             im = im.resize((max(1, int(im.width * scale)), max(1, int(im.height * scale))), Image.LANCZOS)
-            page.alpha_composite(im, ((index % 5) * CELL + (CELL - im.width) // 2,
-                                      (index // 5) * CELL + (CELL - im.height) // 2))
+            page.alpha_composite(im, ((index % 8) * CELL + (CELL - im.width) // 2,
+                                      (index // 8) * CELL + (CELL - im.height) // 2))
             print(f"{key:8s} image {path} {im.width}x{im.height}")
             index += 1
 
@@ -86,8 +93,8 @@ def main() -> int:
         if im is None:
             print(f"{key}: spine bake failed ({folder})")
             continue
-        page.alpha_composite(im, ((index % 5) * CELL + (CELL - im.width) // 2,
-                                  (index // 5) * CELL + (CELL - im.height) // 2))
+        page.alpha_composite(im, ((index % 8) * CELL + (CELL - im.width) // 2,
+                                  (index // 8) * CELL + (CELL - im.height) // 2))
         print(f"{key:8s} spine {folder} {im.width}x{im.height}")
         index += 1
 
@@ -99,8 +106,8 @@ def main() -> int:
                 im = im.crop(bbox)
             scale = min((CELL - 6) / im.width, (CELL - 6) / im.height)
             im = im.resize((max(1, int(im.width * scale)), max(1, int(im.height * scale))), Image.LANCZOS)
-            page.alpha_composite(im, ((index % 5) * CELL + (CELL - im.width) // 2,
-                                      (index // 5) * CELL + (CELL - im.height) // 2))
+            page.alpha_composite(im, ((index % 8) * CELL + (CELL - im.width) // 2,
+                                      (index // 8) * CELL + (CELL - im.height) // 2))
             print(f"{key:8s} image {path} {im.width}x{im.height}")
             index += 1
 

@@ -1824,6 +1824,206 @@ static void test_batch11(void) {
     check("torch two died with boss", g_battle.enemies[2].hp, 0);
 }
 
+
+/* ---- batch 12: the Gremlin Leader and its five Gremlins ---------------- */
+
+static void gremlin_fresh(void) {
+    battle_test_spawn_gremlin_leader();
+    /* Overwrite the two random starters and add the third slot, so the layout
+     * is deterministic: three Warriors unless a test says otherwise. */
+    battle_test_spawn_gremlin_minion(1, 0);
+    battle_test_spawn_gremlin_minion(2, 0);
+    battle_test_spawn_gremlin_minion(3, 0);
+    g_run.screen = SCREEN_FIGHT;
+    g_battle.phase = PHASE_PLAYER;
+    g_battle.energy = g_battle.max_energy = 3;
+    g_battle.hp = 80;
+}
+
+static void test_batch12(void) {
+    Enemy *e;
+
+    /* It opens with two random minions and sits on the right edge. */
+    battle_test_spawn_gremlin_leader();
+    e = &g_battle.enemies[0];
+    check("leader minions two", g_battle.enemy_count, 3);
+    check("leader hp low", e->max_hp >= 140, 1);
+    check("leader hp high", e->max_hp <= 148, 1);
+    check("leader moves", e->move_count, 3);
+    check("leader x", e->draw_x, 316);
+    check("leader width", e->draw_w, 60);
+    check("leader minion one owner", g_battle.enemies[1].minion_owner, 0);
+    check("leader minion two owner", g_battle.enemies[2].minion_owner, 0);
+
+    /* A full room: Warrior / Thief / Fat at their real HP ranges and slots. */
+    gremlin_fresh();
+    check("gremlin four enemies", g_battle.enemy_count, 4);
+    check("warrior name", strcmp(g_battle.enemies[1].name, "火大地精"), 0);
+    check("warrior hp", g_battle.enemies[1].max_hp >= 20 && g_battle.enemies[1].max_hp <= 24, 1);
+    check("warrior x", g_battle.enemies[1].draw_x, 120);
+    check("thief x", g_battle.enemies[2].draw_x, 188);
+    check("fat x", g_battle.enemies[3].draw_x, 256);
+    check("minion width", g_battle.enemies[3].draw_w, 54);
+
+    /* Warrior: Claw 4, and AngryPower adds Strength only when HP is lost. */
+    gremlin_fresh();
+    g_battle.enemies[1].move_index = 0;
+    battle_test_enemy_turn(1);
+    check("warrior claw", g_battle.hp, 76);
+    g_battle.enemies[1].block = 0;
+    battle_test_damage_enemy(1, 3);
+    check("warrior angry", g_battle.enemies[1].strength, 1);
+    g_battle.enemies[1].block = 10;
+    battle_test_damage_enemy(1, 3);
+    check("warrior angry blocked", g_battle.enemies[1].strength, 1);
+    check("warrior block spent", g_battle.enemies[1].block, 7);
+
+    /* Thief Puncture 9. */
+    gremlin_fresh();
+    battle_test_spawn_gremlin_minion(2, 1);
+    g_battle.enemies[2].move_index = 0;
+    battle_test_enemy_turn(2);
+    check("thief puncture", g_battle.hp, 71);
+
+    /* Fat Blunt 4 + 1 Weak. */
+    gremlin_fresh();
+    battle_test_spawn_gremlin_minion(3, 2);
+    g_battle.weak = 0;
+    g_battle.enemies[3].move_index = 0;
+    battle_test_enemy_turn(3);
+    check("fat blunt", g_battle.hp, 76);
+    check("fat weak", g_battle.weak, 1);
+
+    /* Tsundere Protect gives 7 block to another monster and keeps Protecting
+     * while one lives; alone it switches to Bash and stays there. */
+    gremlin_fresh();
+    battle_test_spawn_gremlin_minion(1, 3);
+    for (int i = 2; i < 4; i++) g_battle.enemies[i].hp = 0;
+    g_battle.enemies[0].block = 0;
+    g_battle.enemies[1].block = 0;
+    g_battle.enemies[1].last_move = 255;
+    g_battle.enemies[1].move_index = 0;
+    battle_test_enemy_turn(1);
+    check("tsundere protect owner", g_battle.enemies[0].block, 7);
+    check("tsundere protect self", g_battle.enemies[1].block, 0);
+    check("tsundere stays protect", g_battle.enemies[1].move_index, 0);
+    g_battle.enemies[0].hp = 0;
+    battle_test_choose_roll(1, 0);
+    check("tsundere alone bash", g_battle.enemies[1].move_index, 1);
+    g_battle.hp = 80;
+    battle_test_enemy_turn(1);
+    check("tsundere bash damage", g_battle.hp, 74);
+    check("tsundere keeps bash", g_battle.enemies[1].move_index, 1);
+
+    /* Wizard: currentCharge starts at 1, so two Charges then a 25 blast. */
+    gremlin_fresh();
+    battle_test_spawn_gremlin_minion(1, 4);
+    for (int i = 2; i < 4; i++) g_battle.enemies[i].hp = 0;
+    Enemy *wiz = &g_battle.enemies[1];
+    check("wizard charge start", wiz->ai_turn, 1);
+    check("wizard opens charge", wiz->move_index, 0);
+    battle_test_enemy_turn(1);
+    check("wizard charge two", wiz->ai_turn, 2);
+    check("wizard still charge", wiz->move_index, 0);
+    battle_test_enemy_turn(1);
+    check("wizard charge three", wiz->ai_turn, 3);
+    check("wizard blast queued", wiz->move_index, 1);
+    g_battle.hp = 80;
+    battle_test_enemy_turn(1);
+    check("wizard blast", g_battle.hp, 55);
+    check("wizard reset", wiz->ai_turn, 0);
+    check("wizard charge again", wiz->move_index, 0);
+
+    /* Leader, no minions: Rally unless the last move was Rally, otherwise
+     * Stab; roll 75+ does the same for Stab. */
+    gremlin_fresh();
+    for (int i = 1; i < 4; i++) g_battle.enemies[i].hp = 0;
+    e = &g_battle.enemies[0];
+    e->last_move = 255;
+    battle_test_choose_roll(0, 0);
+    check("leader no minions rally", e->move_index, 0);
+    e->last_move = 0;
+    battle_test_choose_roll(0, 0);
+    check("leader no minions repeat rally", e->move_index, 2);
+    e->last_move = 2;
+    battle_test_choose_roll(0, 0);
+    check("leader no minions repeat stab", e->move_index, 0);
+    e->last_move = 255;
+    battle_test_choose_roll(0, 90);
+    check("leader no minions stab", e->move_index, 2);
+
+    /* One minion: no repeated Rally, Encourage guarded, Stab guarded. */
+    gremlin_fresh();
+    for (int i = 2; i < 4; i++) g_battle.enemies[i].hp = 0;
+    e = &g_battle.enemies[0];
+    e->last_move = 255;
+    battle_test_choose_roll(0, 0);
+    check("leader one rally", e->move_index, 0);
+    e->last_move = 0;
+    battle_test_choose_roll(0, 0);
+    check("leader one repeat rally", e->move_index != 0, 1);
+    e->last_move = 1;
+    battle_test_choose_roll(0, 60);
+    check("leader one repeat encourage", e->move_index, 2);
+    e->last_move = 2;
+    battle_test_choose_roll(0, 90);
+    check("leader one repeat stab", e->move_index != 2, 1);
+
+    /* Two minions: Encourage on a low roll, Stab on a high one, no repeats. */
+    gremlin_fresh();
+    e = &g_battle.enemies[0];
+    e->last_move = 255;
+    battle_test_choose_roll(0, 60);
+    check("leader two encourage", e->move_index, 1);
+    e->last_move = 1;
+    battle_test_choose_roll(0, 60);
+    check("leader two repeat encourage", e->move_index, 2);
+    e->last_move = 2;
+    battle_test_choose_roll(0, 90);
+    check("leader two repeat stab", e->move_index, 1);
+
+    /* Rally fills two empty slots, and minions do not act on the summon turn. */
+    gremlin_fresh();
+    for (int i = 1; i < 4; i++) g_battle.enemies[i].hp = 0;
+    e = &g_battle.enemies[0];
+    e->move_index = 0;
+    g_battle.hp = 80;
+    battle_test_enemy_turn(0);
+    check("leader rallied two", g_battle.enemy_count, 4);
+    check("leader rally no damage", g_battle.hp, 80);
+    check("leader rally owner", g_battle.enemies[1].minion_owner, 0);
+    check("leader rally owner two", g_battle.enemies[2].minion_owner, 0);
+
+    /* Encourage: leader +3 Strength, each living minion +3 and +6 block. */
+    gremlin_fresh();
+    for (int i = 0; i < 4; i++) {
+        g_battle.enemies[i].strength = 0;
+        g_battle.enemies[i].block = 0;
+    }
+    g_battle.enemies[0].move_index = 1;
+    battle_test_enemy_turn(0);
+    check("leader encourage strength", g_battle.enemies[0].strength, 3);
+    check("warrior encouraged strength", g_battle.enemies[1].strength, 3);
+    check("warrior encouraged block", g_battle.enemies[1].block, 6);
+    check("thief encouraged block", g_battle.enemies[2].block, 6);
+    check("fat encouraged block", g_battle.enemies[3].block, 6);
+
+    /* Stab is three hits of 6. */
+    gremlin_fresh();
+    g_battle.enemies[0].move_index = 2;
+    g_battle.hp = 80;
+    battle_test_enemy_turn(0);
+    check("leader stab", g_battle.hp, 62);
+
+    /* Killing the leader takes the whole room with it. */
+    gremlin_fresh();
+    battle_test_damage_enemy(0, 999);
+    check("leader dead", g_battle.enemies[0].hp, 0);
+    check("leader death clears one", g_battle.enemies[1].hp, 0);
+    check("leader death clears two", g_battle.enemies[2].hp, 0);
+    check("leader death clears three", g_battle.enemies[3].hp, 0);
+}
+
 /* ---- picker preview ---------------------------------------------------- */
 
 /* The card-choice screen only appears mid-combat when one of seven cards is
@@ -1887,10 +2087,10 @@ void card_test_demo_fight(int which) {
     };
     /* 0 Champ, 1 Book of Stabbing, 2 Byrds, 3 Chosen, 4 Parasite,
      * 5 Spheric Guardian, 6 the three Slavers, 7 BronzeAutomaton with its
-     * two summoned orbs, 8 the Collector with its Torch Heads.  Same spawn
-     * path the real encounter uses, then a hand so the bottom screen has
-     * cards to draw. */
-    if (which < 0 || which > 8) which = 0;
+     * two summoned orbs, 8 the Collector with its Torch Heads, 9 the Gremlin
+     * Leader with three different minions.  Same spawn path the real
+     * encounter uses, then a hand so the bottom screen has cards to draw. */
+    if (which < 0 || which > 9) which = 0;
     if (which == 6) battle_test_spawn_slavers();
     else if (which == 7) {
         battle_test_spawn_automaton();
@@ -1898,6 +2098,12 @@ void card_test_demo_fight(int which) {
     } else if (which == 8) {
         battle_test_spawn_collector();
         battle_test_enemy_turn(0);   /* Spawn the two Torch Heads */
+    } else if (which == 9) {
+        battle_test_spawn_gremlin_leader();
+        /* Force one of each shape: Warrior, Thief, Fat. */
+        battle_test_spawn_gremlin_minion(1, 0);
+        battle_test_spawn_gremlin_minion(2, 1);
+        battle_test_spawn_gremlin_minion(3, 2);
     } else if (which <= 1) battle_test_spawn_act2(which == 0 ? 1 : 0);
     else battle_test_spawn_act2_monster(which - 2);
     g_run.act = 2;     /* display is 1-based: the city */
@@ -1953,6 +2159,11 @@ void card_test_demo_fight(int which) {
         g_battle.enemies[2].move_index = 1;
         g_battle.enemies[2].used_entangle = 0;
         g_battle.entangled = 1;
+    } else if (which == 9) {
+        /* Leader Encourage (own +3 Strength, each Gremlin +3 and +6 block)
+         * with a Warrior, Thief and Fat Gremlin in the three minion slots. */
+        e->move_index = 1;
+        for (int i = 1; i < 4; i++) g_battle.enemies[i].move_index = 0;
     } else if (which == 8) {
         /* Collector Fireball with one Torch Head Tackling on each side. */
         e->move_index = 1;
@@ -2007,6 +2218,7 @@ void card_test_run(void) {
     test_batch9();
     test_batch10();
     test_batch11();
+    test_batch12();
     g_run.screen = SCREEN_MAP;
 }
 

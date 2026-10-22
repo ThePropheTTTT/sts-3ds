@@ -403,6 +403,32 @@ static const EnemyMove COLLECTOR_MOVES[] = {
 static const EnemyMove TORCH_HEAD_MOVES[] = {
     {MOVE_ATTACK, 7, 0, 0},        /* Tackle */
 };
+/* The five Gremlins that the Gremlin Leader can summon.  Their pools and
+ * numbers come from the exordium/*.java sources; the port keeps each one's
+ * one signature move so the mini-fight still reads correctly. */
+static const EnemyMove GREMLIN_WARRIOR_MOVES[] = {
+    {MOVE_ATTACK, 4, 0, 0},        /* Scratch */
+};
+static const EnemyMove GREMLIN_THIEF_MOVES[] = {
+    {MOVE_ATTACK, 9, 0, 0},        /* Puncture */
+};
+static const EnemyMove GREMLIN_FAT_MOVES[] = {
+    {MOVE_ATTACK_WEAK, 4, 1, 0},   /* Blunt: 4 damage + 1 Weak */
+};
+static const EnemyMove GREMLIN_TSUNDERE_MOVES[] = {
+    {MOVE_PROTECT, 7, 0, 0},       /* Protect: 7 block to a random ally */
+    {MOVE_ATTACK, 6, 0, 0},        /* Bash */
+};
+static const EnemyMove GREMLIN_WIZARD_MOVES[] = {
+    {MOVE_CHARGE, 0, 0, 0},        /* Charge */
+    {MOVE_ATTACK, 25, 0, 0},       /* Ultimate Blast */
+};
+/* GremlinLeader.java: 2 Rally, 3 Encourage, 4 Stab; shifted to 0..2. */
+static const EnemyMove GREMLIN_LEADER_MOVES[] = {
+    {MOVE_SPAWN, 0, 0, 0},         /* Rally: summon up to two Gremlins */
+    {MOVE_COMMAND, 3, 6, 0},       /* Encourage: +3 Str, +6 block to allies */
+    {MOVE_MULTI, 6, 3, 0},         /* Stab: 6 damage three times */
+};
 static const EnemyMove BOSS_MOVES[] = {
     {MOVE_ATTACK, 35, 0, 0},       /* Slam */
     {MOVE_SLIME, 0, 0, 0},         /* Goop Spray */
@@ -574,6 +600,42 @@ static int collector_has_dead_minion(const Enemy *e) {
             g_battle.enemies[i].hp <= 0) return 1;
     }
     return 0;
+}
+
+static int gremlin_minions_alive(const Enemy *e) {
+    int leader = (int)(e - g_battle.enemies);
+    int n = 0;
+    if (leader < 0 || leader >= g_battle.enemy_count) return 0;
+    for (int i = 0; i < g_battle.enemy_count; i++) {
+        if (i != leader && g_battle.enemies[i].minion_owner == leader &&
+            g_battle.enemies[i].hp > 0) n++;
+    }
+    return n;
+}
+
+/* GremlinLeader.getMove (GremlinLeader.java:138-182), with the three minion
+ * slot state deciding which table is used.  The two recursive calls are the
+ * game's re-rolls (random(50,99) and random(0,80)). */
+static void choose_gremlin_leader(Enemy *e, unsigned int roll) {
+    int n = gremlin_minions_alive(e);
+    if (n == 0) {
+        if (roll < 75) e->move_index = e->last_move != 0 ? 0 : 2;
+        else e->move_index = e->last_move != 2 ? 2 : 0;
+    } else if (n < 2) {
+        if (roll < 50) {
+            if (e->last_move != 0) e->move_index = 0;
+            else choose_gremlin_leader(e, 50 + rnd() % 50);
+        } else if (roll < 80) {
+            e->move_index = e->last_move != 1 ? 1 : 2;
+        } else if (e->last_move != 2) {
+            e->move_index = 2;
+        } else {
+            choose_gremlin_leader(e, rnd() % 81);
+        }
+    } else {
+        if (roll < 66) e->move_index = e->last_move != 1 ? 1 : 2;
+        else e->move_index = e->last_move != 2 ? 2 : 1;
+    }
 }
 
 static void choose_move_roll(Enemy *e, unsigned int roll) {
@@ -798,6 +860,30 @@ static void choose_move_roll(Enemy *e, unsigned int roll) {
             return;
         }
         e->move_index = (unsigned char)(e->last_move != 2 ? 2 : 1);
+        return;
+    }
+
+    /* GremlinLeader.getMove.  The two recursive re-rolls are already in
+     * choose_gremlin_leader(), so the roll passed here is the first 0..99. */
+    if (e->moves == GREMLIN_LEADER_MOVES) {
+        choose_gremlin_leader(e, roll);
+        return;
+    }
+
+    /* GremlinTsundere.getMove is fixed to Protect; after its own turn it stays
+     * on Protect while another monster is alive, otherwise it switches to Bash
+     * (and Bash is repeated forever). */
+    if (e->moves == GREMLIN_TSUNDERE_MOVES) {
+        if (e->last_move == 1) e->move_index = 1;
+        else e->move_index = alive_count() > 1 ? 0 : 1;
+        return;
+    }
+
+    /* GremlinWizard: currentCharge starts at 1, so two Charges, then the
+     * 25-damage Ultimate Blast, then Charge again. */
+    if (e->moves == GREMLIN_WIZARD_MOVES) {
+        if (e->last_move == 1) e->move_index = 0;
+        else e->move_index = e->ai_turn >= 3 ? 1 : 0;
         return;
     }
 
@@ -1066,14 +1152,87 @@ static void setup_act2_collector(void) {
     g_battle.enemy_count = 1;
 }
 
+/* One Gremlin from SummonGremlinAction's weighted pool.  which == -1 rolls
+ * the pool (Warrior/Thief/Fat twice, Tsundere and Wizard once each). */
+static void spawn_gremlin_minion(int leader, int slot, int which) {
+    if (slot < 1 || slot > 3) return;
+    if (which < 0) {
+        static const signed char pool[8] = {0, 0, 1, 1, 2, 2, 3, 4};
+        which = pool[rnd() % 8];
+    }
+    const char *name;
+    int hp;
+    const EnemyMove *moves;
+    int move_count;
+    switch (which) {
+    case 0: name = "火大地精"; hp = 20 + (int)(rnd() % 5); moves = GREMLIN_WARRIOR_MOVES; move_count = 1; break;
+    case 1: name = "卑鄙地精"; hp = 10 + (int)(rnd() % 5); moves = GREMLIN_THIEF_MOVES; move_count = 1; break;
+    case 2: name = "胖地精";   hp = 13 + (int)(rnd() % 5); moves = GREMLIN_FAT_MOVES; move_count = 1; break;
+    case 3: name = "持盾地精"; hp = 12 + (int)(rnd() % 4); moves = GREMLIN_TSUNDERE_MOVES; move_count = 2; break;
+    default: name = "地精法师"; hp = 21 + (int)(rnd() % 5); moves = GREMLIN_WIZARD_MOVES; move_count = 2; break;
+    }
+    add_enemy(slot, name, hp);
+    Enemy *e = &g_battle.enemies[slot];
+    e->art = name;
+    e->moves = moves;
+    e->move_count = move_count;
+    e->minion_owner = (signed char)leader;
+    e->draw_x = (short)(120 + (slot - 1) * 68);
+    e->draw_w = 54;
+    e->first_turn = 0;
+    e->last_move = 255;
+    e->last_before = 255;
+    if (which == 4) e->ai_turn = 1;   /* GremlinWizard.currentCharge starts at 1 */
+    if (slot + 1 > g_battle.enemy_count) g_battle.enemy_count = slot + 1;
+    choose_move(e);
+}
+
+/* GremlinLeader Rally (SummonGremlinAction twice): fill the first two empty
+ * minion slots.  A full room simply ignores the extra summon, like the game. */
+static void spawn_gremlin_minions(int leader) {
+    for (int k = 0; k < 2; k++) {
+        int slot = -1;
+        for (int s = 1; s <= 3; s++) {
+            if (s >= g_battle.enemy_count || g_battle.enemies[s].hp <= 0) {
+                slot = s;
+                break;
+            }
+        }
+        if (slot < 0) break;
+        spawn_gremlin_minion(leader, slot, -1);
+    }
+}
+
+/* GremlinLeader.java: 140-148 HP, two Gremlins at battle start, leader on the
+ * right.  Its minions carry MinionPower, so they leave when the leader dies. */
+static void setup_act2_gremlin_leader(void) {
+    add_enemy(0, "地精首领", 140 + (int)(battle_rand() % 9));
+    Enemy *e = &g_battle.enemies[0];
+    e->moves = GREMLIN_LEADER_MOVES;
+    e->move_count = 3;
+    e->draw_x = 316;
+    e->draw_w = 60;
+    e->last_move = 255;
+    e->last_before = 255;
+    g_battle.enemy_count = 1;
+    /* MonsterHelper: two spawnGremlin() calls, then the leader. */
+    spawn_gremlin_minion(0, 1, -1);
+    spawn_gremlin_minion(0, 2, -1);
+    choose_move(e);
+}
+
 /* Act 2 (The City). HP and move values come from the city monster sources. */
 static void setup_act2(int kind) {
     g_battle.enemy_count = 0;
     if (kind == NODE_ELITE) {
-        /* The city's elite pool: Book of Stabbing or the Slavers.  Gremlin
-         * Leader is not implemented yet. */
-        if ((battle_rand() % 100) >= 50) {
+        /* The city's elite pool: Book of Stabbing, Gremlin Leader, Slavers. */
+        int elite = (int)(battle_rand() % 100);
+        if (elite >= 67) {
             setup_act2_slavers();
+            return;
+        }
+        if (elite >= 34) {
+            setup_act2_gremlin_leader();
             return;
         }
         add_enemy(0, "大书怪", 160 + (int)(battle_rand() % 5));
@@ -1299,7 +1458,8 @@ static void on_enemy_death(int index) {
     }
     /* BronzeAutomaton.die(): every other living monster in the room dies with
      * it. */
-    if (e->moves == AUTOMATON_MOVES || e->moves == COLLECTOR_MOVES) {
+    if (e->moves == AUTOMATON_MOVES || e->moves == COLLECTOR_MOVES ||
+        e->moves == GREMLIN_LEADER_MOVES) {
         for (int j = 0; j < g_battle.enemy_count; j++) {
             if (j == index) continue;
             if (g_battle.enemies[j].hp > 0) {
@@ -1366,6 +1526,9 @@ static int damage_enemy_typed(int index, int amount, int thorns) {
             e->plated--;
             if (e->plated == 0) e->move_index = 3;
         }
+        /* AngryPower.onAttacked: +1 Strength whenever the Gremlin Warrior takes
+         * attack damage (blocked hits and THORNS do not count). */
+        if (!thorns && e->moves == GREMLIN_WARRIOR_MOVES) e->strength++;
     }
     if (e->moves == BOSS_MOVES && e->hp > 0 && !e->split_done &&
         e->hp * 2 <= e->max_hp) {
@@ -1428,7 +1591,7 @@ static void hit_all(int amount) {
 }
 
 static int random_alive_enemy(void) {
-    int alive[3];
+    int alive[4];
     int count = 0;
     for (int i = 0; i < g_battle.enemy_count; i++) {
         if (enemy_alive(i)) alive[count++] = i;
@@ -1894,7 +2057,7 @@ int battle_play(int slot, int target) {
         hits = burned;
     }
 
-    int hp_before[3];
+    int hp_before[4];
     for (int i = 0; i < g_battle.enemy_count; i++) hp_before[i] = g_battle.enemies[i].hp;
 
     if (damage > 0) {
@@ -1915,7 +2078,7 @@ int battle_play(int slot, int target) {
         int lost = hp_before[i] - g_battle.enemies[i].hp;
         if (lost > 0) unblocked += lost;
     }
-    int killed_target = target >= 0 && target < 3 && hp_before[target] > 0 &&
+    int killed_target = target >= 0 && target < g_battle.enemy_count && hp_before[target] > 0 &&
                         g_battle.enemies[target].hp <= 0;
 
     int block = card_block(c, up);
@@ -2377,6 +2540,8 @@ static void enemy_take_turn(int i) {
         }
         case MOVE_ATTACK:
             enemy_hit(e, i, battle_enemy_intent_damage(i));
+            /* GremlinWizard Ultimate Blast resets currentCharge to 0. */
+            if (e->moves == GREMLIN_WIZARD_MOVES) e->ai_turn = 0;
             break;
         case MOVE_ATTACK_DEBUFF:
             enemy_hit(e, i, battle_enemy_intent_damage(i));
@@ -2448,9 +2613,39 @@ static void enemy_take_turn(int i) {
             e->strength += move->value2;
             break;
         case MOVE_SPAWN:
-            /* BronzeAutomaton Spawn Orbs, or the Collector's two Torch Heads. */
-            if (e->moves == COLLECTOR_MOVES) spawn_collector_heads(i);
+            /* BronzeAutomaton Orbs, the Collector's Torch Heads, or the Gremlin
+             * Leader's Rally (two empty minion slots). */
+            if (e->moves == GREMLIN_LEADER_MOVES) spawn_gremlin_minions(i);
+            else if (e->moves == COLLECTOR_MOVES) spawn_collector_heads(i);
             else spawn_automaton_orbs(i);
+            break;
+        case MOVE_COMMAND:
+            /* GremlinLeader Encourage: itself +3 Strength, every living minion
+             * +3 Strength and +6 block. */
+            e->strength += move->value;
+            for (int j = 0; j < g_battle.enemy_count; j++) {
+                if (j != i && g_battle.enemies[j].hp > 0) {
+                    g_battle.enemies[j].strength += move->value;
+                    g_battle.enemies[j].block += move->value2;
+                }
+            }
+            break;
+        case MOVE_PROTECT: {
+            /* GremlinTsundere Protect: 7 block to a random other monster; if
+             * there is none, it protects itself. */
+            int candidates[4];
+            int n = 0;
+            for (int j = 0; j < g_battle.enemy_count; j++) {
+                if (j != i && g_battle.enemies[j].hp > 0) candidates[n++] = j;
+            }
+            int who = n > 0 ? candidates[rnd() % (unsigned int)n] : i;
+            g_battle.enemies[who].block += move->value;
+            break;
+        }
+        case MOVE_CHARGE:
+            /* GremlinWizard charge counter; the next getMove decides whether
+             * the third charge has become the 25-damage blast. */
+            e->ai_turn++;
             break;
         case MOVE_STASIS:
             /* BronzeOrb Stasis: steal one card until the orb dies. */
@@ -2611,6 +2806,23 @@ void battle_test_spawn_collector(void) {
     g_battle.phase = PHASE_PLAYER;
     g_battle.pending_split = -1;
     setup_act2_collector();
+}
+
+void battle_test_spawn_gremlin_leader(void) {
+    memset(&g_battle, 0, sizeof(g_battle));
+    g_battle.hp = 80;
+    g_battle.max_hp = 80;
+    g_battle.energy = 3;
+    g_battle.max_energy = 3;
+    g_battle.phase = PHASE_PLAYER;
+    g_battle.pending_split = -1;
+    setup_act2_gremlin_leader();
+}
+
+void battle_test_spawn_gremlin_minion(int slot, int which) {
+    if (g_battle.enemy_count < 1) return;
+    if (which < 0 || which > 4) return;
+    spawn_gremlin_minion(0, slot, which);
 }
 
 /* Card tests need to kill a minion (or the boss) without constructing a hand. */
