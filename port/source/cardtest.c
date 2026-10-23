@@ -10,6 +10,7 @@
 #include "run.h"
 #include "l10n_gen.h"
 #include "save.h"
+#include "audio.h"
 
 #define MAX_FAILS 12
 
@@ -2991,6 +2992,11 @@ void card_test_draw(C3D_RenderTarget *top) {
         for (int i = 0; i < s_fails && i < MAX_FAILS; i++) {
             text_draw(FS_SMALL, s_fail_text[i], 8.0f, 44.0f + (float)i * 14.0f, COL_INK);
         }
+    }
+    {   /* audio state: the streamer has no other visible surface yet */
+        char abuf[96];
+        audio_debug(abuf, sizeof(abuf));
+        text_draw(FS_SMALL, abuf, 8, 190, COL_DIM);
     }
     text_draw(FS_SMALL, "START exit", 8, 214, COL_DIM);
 }

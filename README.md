@@ -12,6 +12,10 @@
 
 存档位于 `sdmc:/3ds/sts3ds/save.dat`，在地图界面自动写入；读档会校验 magic、版本与 checksum，并用保存的随机种子重建地图。细节见 [存档](docs/03-save.md)。
 
+## 音频
+
+背景音乐从正版 jar 提取为 22050 Hz 单声道 PCM，放到 `sdmc:/3ds/sts3ds/audio/`，运行时优先走 NDSP 流式播放；没有 DSP 固件时回退 CSND。提取命令、固件要求与模拟器备注见 [音频](docs/04-audio.md)。
+
 ## 免责声明
 
 - 本项目与 Mega Crit、Humble Games 及相关权利方无任何关联，未获得其授权、认可或赞助。

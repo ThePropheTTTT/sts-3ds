@@ -18,6 +18,7 @@
 #include "ui_gen.h"
 #include "map_paper_gen.h"
 #include "save.h"
+#include "audio.h"
 #if defined(CARD_TEST)
 #include "cardtest.h"
 #endif
@@ -3305,6 +3306,7 @@ int main(int argc, char **argv) {
 
     font_init();
     load_art();
+    audio_init();
 #if defined(CARD_TEST)
     run_start();   /* the self-test starts from a known state, never a save */
 #else
@@ -3365,6 +3367,8 @@ int main(int argc, char **argv) {
         update_play_fx();
         update_floaters();
         if (s_toast_ttl > 0) s_toast_ttl--;
+        audio_set_act(g_run.act);
+        audio_update();
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
         if (g_run.screen == SCREEN_PICK || g_run.screen == SCREEN_FIGHT ||
             g_run.screen == SCREEN_EVENT) {
@@ -3378,6 +3382,7 @@ int main(int argc, char **argv) {
         }
         C3D_FrameEnd(0);
     }
+    audio_exit();
     for (int i = 0; i < 4; i++) {
         if (s_art_sheets[i]) C2D_SpriteSheetFree(s_art_sheets[i]);
     }
@@ -3430,6 +3435,8 @@ int main(int argc, char **argv) {
         handle_buttons(kDown);
         update_floaters();
         update_play_fx();
+        audio_set_act(g_run.act);
+        audio_update();
 
         s_card_seq = 0;
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
@@ -3438,6 +3445,7 @@ int main(int argc, char **argv) {
         C3D_FrameEnd(0);
     }
 
+    audio_exit();
     for (int i = 0; i < 4; i++) {
         if (s_art_sheets[i]) C2D_SpriteSheetFree(s_art_sheets[i]);
     }
