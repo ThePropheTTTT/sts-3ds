@@ -86,7 +86,9 @@ def main(argv=None) -> int:
         print(f"power {name:12s}       {key} -> {x},{y} {w}x{h}")
 
     bake_spine.JAR = args.jar
-    player = bake_spine.bake("images/characters/ironclad/idle", {}, out_size=200)
+    # The setup pose is a deep crouch; the Idle animation starts in the wide
+    # combat stance the game shows, so sample it at t=0.
+    player = bake_spine.bake("images/characters/ironclad/idle", {}, out_size=200, anim="Idle")
     if player is None:
         raise SystemExit("could not bake images/characters/ironclad/idle")
     bbox = player.getchannel("A").getbbox()
@@ -130,7 +132,7 @@ def main(argv=None) -> int:
         header.append("    {%d, %d, %d, %d}, /* %s */" % (POWER_BOX[i] + (POWERS[i],)))
     header.append("};")
     header.append("")
-    header.append("/* images/characters/ironclad/idle, baked setup pose (no Spine runtime). */")
+    header.append("/* images/characters/ironclad/idle, Idle animation at t=0 (Spine setup pose is a crouch). */")
     header.append("static const StsCombatRect sts_combat_player = {%d, %d, %d, %d};" % tuple(PLAYER_RECT))
     header.append("")
     with open(args.header, "w", encoding="utf-8") as fh:

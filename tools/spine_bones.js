@@ -19,6 +19,7 @@ var Loader = Java.extend(AttachmentLoader, {
 var skeletonPath = java.lang.System.getProperty("spine_skeleton");
 var outPath = java.lang.System.getProperty("spine_out");
 var animName = java.lang.System.getProperty("spine_anim");
+var animTime = parseFloat(java.lang.System.getProperty("spine_anim_time", "0"));
 var json = new com.esotericsoftware.spine.SkeletonJson(new Loader());
 var file = new com.badlogic.gdx.files.FileHandle(skeletonPath);
 var data = json.readSkeletonData(file);
@@ -27,7 +28,7 @@ skeleton.setToSetupPose();
 if (animName != null && animName.length() > 0) {
     var anim = data.findAnimation(animName);
     if (anim == null) { print("missing animation " + animName); quit(2); }
-    anim.apply(skeleton, 0, 0, true, new com.badlogic.gdx.utils.Array());
+    anim.apply(skeleton, Math.max(0, animTime - 0.01), animTime, true, new com.badlogic.gdx.utils.Array());
 }
 skeleton.updateWorldTransform();
 var bones = skeleton.getBones();

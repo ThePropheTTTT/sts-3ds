@@ -1975,12 +1975,12 @@ static void draw_fight_top(void) {
     draw_entity_box(PLAYER_BOX_X, ENEMY_W, g_battle.hp, g_battle.max_hp, g_battle.block, 0,
                     RGB(52, 58, 66));
     if (s_combat_tex) {
-        /* The Ironclad is a Spine rig, baked to one setup-pose sprite at build
-         * time (tools/extract_combat.py + tools/bake_spine.py). */
-        float pw = 74.0f;
+        /* The Ironclad is a Spine rig; extract_combat.py bakes its Idle frame
+         * (the setup pose is a crouch).  Sit it on the bottom of the HP box. */
+        float pw = 96.0f;
         float ph = pw * (float)sts_combat_player.h / (float)sts_combat_player.w;
         C2D_Image img = {s_combat_tex, &s_cb_player};
-        C2D_DrawImageAt(img, PLAYER_BOX_X - 3.0f, ENEMY_Y + 2.0f, 0.45f, NULL,
+        C2D_DrawImageAt(img, PLAYER_BOX_X - 14.0f, ENEMY_Y + ENEMY_H - ph - 2.0f, 0.45f, NULL,
                         pw / (float)sts_combat_player.w,
                         ph / (float)sts_combat_player.h);
     }

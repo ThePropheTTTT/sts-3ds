@@ -124,7 +124,7 @@ def _jjs_path():
     return shutil.which("jjs")
 
 
-def _pose_from_runtime(monster_dir, skeleton_bytes):
+def _pose_from_runtime(monster_dir, skeleton_bytes, anim=None):
     """Evaluate the setup pose once with the game's Spine runtime.
 
     The hand-rolled matrix walk below ignores IK/path/transform constraints.  That
@@ -143,6 +143,7 @@ def _pose_from_runtime(monster_dir, skeleton_bytes):
     digest = hashlib.sha1()
     digest.update(skeleton_bytes)
     digest.update(os.path.abspath(JAR).encode("utf-8"))
+    digest.update((anim or "").encode("utf-8"))
     cache_path = os.path.join(cache_dir, digest.hexdigest() + ".json")
     if os.path.exists(cache_path):
         try:
@@ -167,8 +168,10 @@ def _pose_from_runtime(monster_dir, skeleton_bytes):
             os.path.abspath(JAR),
             "-Dspine_skeleton=" + tmp_in,
             "-Dspine_out=" + tmp_out,
-            script,
         ]
+        if anim:
+            cmd.append("-Dspine_anim=" + anim)
+        cmd.append(script)
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if proc.returncode != 0 or not os.path.exists(tmp_out):
             print("spine runtime failed for", monster_dir, proc.stderr.strip()[:200])
@@ -193,7 +196,7 @@ def _pose_from_runtime(monster_dir, skeleton_bytes):
                     pass
 
 
-def bake(monster_dir, page_images, out_size=96):
+def bake(monster_dir, page_images, out_size=96, anim=None):
     with zipfile.ZipFile(JAR) as zf:
         names = zf.namelist()
         jsons = [n for n in names if n.startswith(monster_dir + "/") and n.endswith(".json")]
@@ -235,7 +238,7 @@ def bake(monster_dir, page_images, out_size=96):
             parent = bone.get("parent")
             world[bone["name"]] = mat_mul(world[parent], local) if parent else local
 
-        pose = _pose_from_runtime(monster_dir, zf.read(jpath))
+        pose = _pose_from_runtime(monster_dir, zf.read(jpath), anim)
         if pose:
             world.update(pose)
 
