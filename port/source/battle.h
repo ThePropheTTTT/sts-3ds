@@ -105,6 +105,7 @@ typedef struct {
     unsigned char used_entangle; /* SlaverRed: ENTANGLE is used exactly once */
     unsigned char used_stasis;   /* BronzeOrb: STASIS is used exactly once */
     unsigned char used_ult;      /* Collector: Mega Debuff is used exactly once */
+    unsigned char shackled;      /* GainStrengthPower: Strength restored at end of turn */
     unsigned char death_done;    /* on_death has already run for this enemy */
     unsigned char draw_w;        /* custom hitbox width, 0 = use the old layout */
     signed char minion_owner;    /* BronzeOrb: index of its BronzeAutomaton */
@@ -157,6 +158,8 @@ typedef struct {
     int frail_just;      /* FrailPower.justApplied: skip the first decrement */
     int hex;             /* HexPower: Dazed added per non-Attack card played */
     int entangled;       /* EntanglePower: Attack cards are locked until turn end */
+    int artifact;        /* ArtifactPower: negates one debuff per stack */
+    int intangible;      /* IntangiblePlayerPower: all damage taken is 1 */
 
     int draw[64];
     int draw_count;
@@ -181,6 +184,8 @@ typedef struct {
     int necro_pending;   /* Necronomicurse copies waiting for the hand */
     unsigned char zero_cost[160];   /* card indexes that cost 0 this combat */
     unsigned char zero_turn[160];   /* card indexes that cost 0 this turn */
+    unsigned char cost_one_turn[160];   /* Enlightenment: cost 1 this turn */
+    unsigned char cost_one_combat[160]; /* Enlightenment+: cost 1 for the combat */
     int force_exhaust;              /* the next card played is exhausted (Havoc) */
     int pick_mode;       /* PICK_* while SCREEN_PICK is up */
     int pick_extra;      /* draw count / copy count / chosen count */

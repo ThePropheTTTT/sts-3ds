@@ -34,14 +34,16 @@ BLOCK_BOX = (0, 0, 64, 64)
 # 48px icons: four on row 0, two on row 1, then the act 2 powers on row 2.
 POWER_BOX = [(64 + 48 * i, 0, 48, 48) for i in range(4)] + \
             [(64 + 48 * i, 48, 48, 48) for i in range(2)] + \
-            [(64 + 48 * i, 96, 48, 48) for i in range(5)]
-PLAYER_BOX = (0, 160, 96, 136)
-PLAYER_RECT = [0, 160, 96, 136]  # filled in by main(): fitted inside PLAYER_BOX
+            [(64 + 48 * i, 96, 48, 48) for i in range(5)] + \
+            [(64, 144, 48, 48)]
+PLAYER_BOX = (0, 208, 96, 136)
+PLAYER_RECT = [0, 208, 96, 136]  # filled in by main(): fitted inside PLAYER_BOX
 
 # Order must match STS_POWER_* in port/source/combat_gen.h.  MetallicizePower
 # loads powers.atlas region "armor" (there is no "metallicize" region).
 POWERS = ["strength", "dexterity", "vulnerable", "weak", "frail", "armor",
-          "flight", "platedarmor", "artifact", "barricade", "hex"]
+          "flight", "platedarmor", "artifact", "barricade", "hex",
+          "intangible"]
 
 
 def region_on_canvas(page: Image.Image, region) -> Image.Image:
@@ -95,7 +97,8 @@ def main(argv=None) -> int:
     if bbox:
         player = player.crop(bbox)
     x, y, w, h = PLAYER_BOX
-    # Keep the aspect ratio: the baked knight is taller than it is wide.
+    # Keep the aspect ratio: the Idle frame is wider than it is tall, so the
+    # sprite is fitted by width and sits on the bottom of the 68px HP box.
     scale = min(w / player.width, h / player.height)
     pw = max(1, round(player.width * scale))
     ph = max(1, round(player.height * scale))

@@ -1588,7 +1588,7 @@ typedef struct {
 
 static int power_chips(int strength, int vulnerable, int weak, int frail,
                        int metallicize, int flight, int plated, int artifact,
-                       int barricade, int hex, PowerChip *out) {
+                       int barricade, int hex, int intangible, PowerChip *out) {
     int n = 0;
     if (strength != 0) {
         out[n].icon = STS_POWER_STRENGTH;
@@ -1648,6 +1648,12 @@ static int power_chips(int strength, int vulnerable, int weak, int frail,
         out[n].icon = STS_POWER_HEX;
         out[n].amount = hex;
         out[n].color = RGB(190, 150, 240);
+        n++;
+    }
+    if (intangible > 0) {
+        out[n].icon = STS_POWER_INTANGIBLE;
+        out[n].amount = intangible;
+        out[n].color = RGB(220, 225, 235);
         n++;
     }
     return n;
@@ -1845,6 +1851,10 @@ static int status_collect(StatusRow *rows, int max) {
                    "非攻击牌会塞入晕眩", debuff);
     n = status_add(rows, n, max, "缠身", g_battle.entangled,
                    "本回合不能打出攻击牌", debuff);
+    n = status_add(rows, n, max, "人工制品", g_battle.artifact,
+                   "免疫负面效果", buff);
+    n = status_add(rows, n, max, "无实体", g_battle.intangible,
+                   "受到的伤害降为 1", buff);
     if (n == player_start) {
         n = status_header(rows, n, max, "  无状态", COL_DIM);
     }
@@ -1870,6 +1880,8 @@ static int status_collect(StatusRow *rows, int max) {
                        "回合结束获得格挡；掉血减 1 层", buff);
         n = status_add(rows, n, max, "人工制品", e->artifact,
                        "免疫负面效果", buff);
+        n = status_add(rows, n, max, "枷锁", e->shackled,
+                       "回合结束时恢复力量", debuff);
         n = status_add(rows, n, max, "壁垒", e->barricade,
                        "格挡在回合开始时不消失", buff);
         if (e->stasis_card >= 0) {
@@ -1988,7 +2000,8 @@ static void draw_fight_top(void) {
         PowerChip chips[10];
         int n = power_chips(g_battle.strength, g_battle.vulnerable, g_battle.weak,
                             g_battle.frail, battle_power(POW_METALLICIZE),
-                            0, 0, 0, battle_power(POW_BARRICADE), g_battle.hex, chips);
+                            0, 0, g_battle.artifact, battle_power(POW_BARRICADE),
+                            g_battle.hex, g_battle.intangible, chips);
         draw_power_row(PLAYER_BOX_X + 2.0f, chips, n);
     }
 
@@ -2215,7 +2228,7 @@ static void draw_fight_top(void) {
         {
             PowerChip chips[10];
             int n = power_chips(e->strength, e->vulnerable, e->weak, 0, e->metallicize,
-                                e->flight, e->plated, e->artifact, e->barricade, 0, chips);
+                                e->flight, e->plated, e->artifact, e->barricade, 0, 0, chips);
             draw_power_row(x + 2.0f, chips, n);
         }
     }
@@ -3266,6 +3279,7 @@ int main(int argc, char **argv) {
          * turn there, so it cannot also mean "show the Discovery demo". */
         if (g_run.screen == SCREEN_FIGHT) {
             if (kDown & KEY_SELECT) card_test_demo_exit();
+            else if (kDown & KEY_R) s_detail = !s_detail;  /* CARD_TEST: status list */
             else if (kDown & KEY_X) card_test_touch_begin();
             else if (s_drag.active && (kDown & KEY_Y)) card_test_touch_release(0);
             else if (s_drag.active && (kDown & KEY_B)) card_test_touch_release(1);
@@ -3289,11 +3303,14 @@ int main(int argc, char **argv) {
             /* B cycles the set pieces: Automaton (7), Collector (8), Gremlin
              * Leader (9), act 3 background (10), then Slime Boss (11), Nob
              * (12), Acid Slimes (13), Jaw Worm (14), the split slimes (15),
-             * then the two draw-pile pickers (16, 17). */
+             * then the last four powers on Acid Slimes (18).  The two draw-pile
+             * pickers (16, 17) are skipped here: they end on SCREEN_PICK, where
+             * B only cancels the picker, so B cannot cycle past them. */
             if (kDown & KEY_B) {
                 card_test_demo_fight(s_boss_demo);
                 s_boss_demo++;
-                if (s_boss_demo > 17) s_boss_demo = 7;
+                if (s_boss_demo == 16 || s_boss_demo == 17) s_boss_demo = 18;
+                if (s_boss_demo > 18) s_boss_demo = 7;
             }
         }
         update_play_fx();

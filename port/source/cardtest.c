@@ -2404,6 +2404,141 @@ static void test_batch14(void) {
     check("havoc shuffle exhaust", g_battle.exhaust_count, 1);
 }
 
+
+/* ---- batch 15: the last four use() effects ----------------------------- */
+
+static const EnemyMove WEAK2[] = {{MOVE_WEAK, 2, 0, 0}};
+static const EnemyMove CURSE3[] = {{MOVE_CURSE, 3, 0, 0}};
+static const EnemyMove PREP1[] = {{MOVE_PREP, 0, 0, 0}};
+
+static void enemy_move_set(int index, const EnemyMove *moves, int count) {
+    Enemy *e = &g_battle.enemies[index];
+    e->moves = moves;
+    e->move_count = (unsigned char)count;
+    e->move_index = 0;
+    e->last_move = 255;
+    e->last_before = 255;
+}
+
+static void test_batch15(void) {
+    Enemy *e;
+    int bash = battle_find_card("Bash");
+    int bludgeon = battle_find_card("Bludgeon");
+
+    /* Panacea: ArtifactPower(p, magic), exhausted. */
+    fresh(200);
+    hand("Panacea", 0);
+    battle_play(0, 0);
+    check("panacea artifact", g_battle.artifact, 1);
+    check("panacea exhaust", g_battle.exhaust_count, 1);
+    fresh(200);
+    hand("Panacea", 1);
+    battle_play(0, 0);
+    check("panacea+ artifact", g_battle.artifact, 2);
+
+    /* ArtifactPower.onSpecificTrigger eats one debuff per stack. */
+    fresh(200);
+    enemy_move_set(0, WEAK2, 1);
+    g_battle.artifact = 1;
+    battle_test_enemy_turn(0);
+    check("artifact eats weak", g_battle.weak, 0);
+    check("artifact spent", g_battle.artifact, 0);
+    g_battle.enemies[0].move_index = 0;
+    g_battle.enemies[0].last_move = 255;
+    battle_test_enemy_turn(0);
+    check("weak lands", g_battle.weak, 2);
+
+    /* Collector Mega Debuff spends all three stacks, one per debuff. */
+    fresh(200);
+    enemy_move_set(0, CURSE3, 1);
+    g_battle.artifact = 3;
+    battle_test_enemy_turn(0);
+    check("curse weak blocked", g_battle.weak, 0);
+    check("curse vuln blocked", g_battle.vulnerable, 0);
+    check("curse frail blocked", g_battle.frail, 0);
+    check("curse artifact all spent", g_battle.artifact, 0);
+
+    /* Ghostly: IntangiblePlayerPower caps the final damage at 1, after block. */
+    fresh(200);
+    hand("Ghostly", 0);
+    battle_play(0, 0);
+    check("ghostly intangible", g_battle.intangible, 1);
+    check("ghostly exhaust", g_battle.exhaust_count, 1);
+    enemy_move_set(0, HIT10, 1);
+    g_battle.hp = 80;
+    g_battle.block = 0;
+    battle_test_enemy_turn(0);
+    check("ghostly caps hit", g_battle.hp, 79);
+    g_battle.hp = 80;
+    g_battle.block = 5;
+    g_battle.enemies[0].move_index = 0;
+    battle_test_enemy_turn(0);
+    check("ghostly block absorbs", g_battle.hp, 80);
+    check("ghostly block left", g_battle.block, 4);
+    g_battle.enemies[0].moves = PREP1;
+    g_battle.enemies[0].move_count = 1;
+    g_battle.enemies[0].move_index = 0;
+    battle_end_turn();
+    check("ghostly expires", g_battle.intangible, 0);
+
+    /* Dark Shackles: LoseStrength + GainStrengthPower restores at the end of
+     * the monster's turn; enemy Artifact absorbs the whole debuff. */
+    fresh(200);
+    e = &g_battle.enemies[0];
+    e->strength = 10;
+    hand("Dark Shackles", 0);
+    battle_play(0, 0);
+    check("shackles strength", e->strength, 1);
+    check("shackles bank", e->shackled, 9);
+    check("shackles exhaust", g_battle.exhaust_count, 1);
+    enemy_move_set(0, PREP1, 1);
+    battle_test_enemy_turn(0);
+    check("shackles returns", g_battle.enemies[0].strength, 10);
+    check("shackles cleared", g_battle.enemies[0].shackled, 0);
+
+    fresh(200);
+    e = &g_battle.enemies[0];
+    e->strength = 10;
+    e->artifact = 1;
+    hand("Dark Shackles", 0);
+    battle_play(0, 0);
+    check("enemy artifact blocks shackles", e->strength, 10);
+    check("enemy artifact spent", e->artifact, 0);
+    check("shackles not banked", e->shackled, 0);
+
+    /* Enlightenment caps the cost of every card in hand to 1 for the turn. */
+    fresh(200);
+    hand("Bash", 0);
+    hand_add("Bludgeon");
+    hand_add("Strike_R");
+    hand_add("Enlightenment");
+    battle_play(3, 0);
+    check("enlighten bash cost", battle_card_cost(0), 1);
+    check("enlighten bludgeon cost", battle_card_cost(1), 1);
+    check("enlighten turn flag", g_battle.cost_one_turn[bash], 1);
+    check("enlighten bludgeon flag", g_battle.cost_one_turn[bludgeon], 1);
+    enemy_move_set(0, PREP1, 1);
+    battle_end_turn();
+    check("enlighten expires", g_battle.cost_one_turn[bash], 0);
+
+    /* Enlightenment+: the cost also stays at 1 for the rest of combat. */
+    fresh(200);
+    hand("Bash", 0);
+    hand_add("Enlightenment");
+    g_battle.hand[1] = CARD_ENTRY(battle_find_card("Enlightenment"), 1);
+    battle_play(1, 0);
+    check("enlighten+ turn flag", g_battle.cost_one_turn[bash], 1);
+    check("enlighten+ combat flag", g_battle.cost_one_combat[bash], 1);
+    enemy_move_set(0, PREP1, 1);
+    battle_end_turn();
+    check("enlighten+ turn expires", g_battle.cost_one_turn[bash], 0);
+    check("enlighten+ combat stays", g_battle.cost_one_combat[bash], 1);
+    /* cards_gen.h is a static table per translation unit; ask battle.c for the
+     * cost through the hand slot instead of passing cardtest's own pointer. */
+    hand("Bash", 0);
+    check("enlighten+ cost stays", battle_card_cost(0), 1);
+}
+
 /* ---- picker preview ---------------------------------------------------- */
 
 /* The card-choice screen only appears mid-combat when one of seven cards is
@@ -2497,9 +2632,11 @@ void card_test_demo_fight(int which) {
      * Leader with three different minions, 10 the same Champ fight with the
      * act 3 background (a preview of beyondScene's floor stack), 11 Slime
      * Boss, 12 Gremlin Nob, 13 two Acid Slimes (M), 14 Jaw Worm, 15 the
-     * Slime Boss' two split slimes.  Same spawn path the real encounter uses,
-     * then a hand so the bottom screen has cards to draw. */
-    if (which < 0 || which > 15) which = 0;
+     * Slime Boss' two split slimes, 16/17 the two draw-pile pickers, 18 the
+     * last four powers (Panacea/Ghostly/Dark Shackles/Enlightenment) on a pair
+     * of Acid Slimes.  Same spawn path the real encounter uses, then a hand so
+     * the bottom screen has cards to draw. */
+    if (which < 0 || which > 18) which = 0;
     if (which == 10) battle_test_spawn_act2(1);
     else if (which == 11) battle_test_spawn_act1(0);
     else if (which == 12) battle_test_spawn_act1(1);
@@ -2509,6 +2646,7 @@ void card_test_demo_fight(int which) {
         battle_test_spawn_act1(0);
         battle_test_split_boss();
     }
+    else if (which == 18) battle_test_spawn_act1(2);
     else if (which == 6) battle_test_spawn_slavers();
     else if (which == 7) {
         battle_test_spawn_automaton();
@@ -2535,6 +2673,22 @@ void card_test_demo_fight(int which) {
     for (int i = 0; i < 5; i++) {
         int idx = battle_find_card(HAND_CARDS[i]);
         if (idx >= 0) g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(idx, 0);
+    }
+    if (which == 18) {
+        static const char *const POWER_CARDS[] = {
+            "Panacea", "Ghostly", "Dark Shackles", "Enlightenment", "Strike_R",
+        };
+        g_battle.hand_count = 0;
+        for (int i = 0; i < 5; i++) {
+            int idx = battle_find_card(POWER_CARDS[i]);
+            if (idx >= 0) g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(idx, 0);
+        }
+        /* Two Artifact stacks and one Intangible for the icon rows; the
+         * status panel lists both by name. */
+        g_battle.artifact = 2;
+        g_battle.intangible = 1;
+        g_battle.enemies[0].move_index = 0;
+        g_battle.enemies[1].move_index = 0;
     }
     Enemy *e = &g_battle.enemies[0];
     if (which == 0) {
@@ -2650,6 +2804,7 @@ void card_test_run(void) {
     test_batch12();
     test_batch13();
     test_batch14();
+    test_batch15();
     g_run.screen = SCREEN_MAP;
 }
 

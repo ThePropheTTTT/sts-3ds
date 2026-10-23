@@ -137,7 +137,7 @@ static const char *EXHAUSTS[] = {
     "Dramatic Entrance", "RitualDagger", "PanicButton",
     "Burning Pact", "Warcry", "Discovery", "Thinking Ahead",
     "Apotheosis", "Madness", "Chrysalis", "Metamorphosis", "Infernal Blade",
-    "Transmutation", "Violence",
+    "Transmutation", "Violence", "Panacea", "Ghostly", "Dark Shackles",
 };
 
 static int card_exhausts(const CardDef *c, int up) {
@@ -169,6 +169,11 @@ int battle_cost_of(const CardDef *c) {
         /* setCostForTurn(0): free for the current turn only (Infernal Blade,
          * Transmutation).  The turn array is cleared in start_player_turn. */
         if (index >= 0 && index < 160 && g_battle.zero_turn[index]) return 0;
+        /* EnlightenmentAction: cards in hand had their costForTurn capped to
+         * 1; the upgraded version also changes cost for the rest of combat. */
+        if (index >= 0 && index < 160 &&
+            (g_battle.cost_one_turn[index] || g_battle.cost_one_combat[index]) &&
+            c->cost > 1) return 1;
     }
     if (strcmp(c->id, "Blood for Blood") == 0) {
         int cost = c->cost - g_battle.damaged;
@@ -229,7 +234,11 @@ static void start_player_turn(void) {
     if (!pw(POW_BARRICADE)) g_battle.block = 0;
     g_battle.no_draw = 0;
     memset(g_battle.zero_turn, 0, sizeof(g_battle.zero_turn));
+    memset(g_battle.cost_one_turn, 0, sizeof(g_battle.cost_one_turn));
     g_battle.force_exhaust = 0;
+    /* IntangiblePlayerPower.atEndOfRound: the guard lasts through the enemy
+     * turn and is gone by the time the next player turn starts. */
+    g_battle.intangible = 0;
     g_battle.energy = g_battle.max_energy;
     /* BerserkPower.atStartOfTurn: one extra energy every turn. */
     if (pw(POW_BERSERK)) g_battle.energy += 1;
@@ -1607,6 +1616,9 @@ static void damage_enemy_thorns(int index, int amount) {
 /* Returns the HP the player actually lost (0 while the hit was absorbed). */
 static int damage_player_raw(int amount) {
     if (amount <= 0) return 0;
+    /* IntangiblePlayerPower.atDamageFinalReceive caps the final damage at 1
+     * before block is applied. */
+    if (g_battle.intangible && amount > 1) amount = 1;
     int absorbed = g_battle.block < amount ? g_battle.block : amount;
     g_battle.block -= absorbed;
     if (amount - absorbed <= 0) return 0;
@@ -1614,6 +1626,41 @@ static int damage_player_raw(int amount) {
     if (g_battle.hp < 0) g_battle.hp = 0;
     g_battle.damaged++;                 /* Blood for Blood counts HP actually lost */
     return amount - absorbed;
+}
+
+/* ArtifactPower.onSpecificTrigger consumes one stack for every ApplyPowerAction
+ * that would put a debuff on the player.  One helper per debuff keeps the
+ * call sites explicit, because a move that applies two debuffs must spend two
+ * stacks (Collector's Mega Debuff spends all three). */
+static int player_debuff_blocked(void) {
+    if (g_battle.artifact > 0) {
+        g_battle.artifact--;
+        return 1;
+    }
+    return 0;
+}
+
+static void player_gain_weak(int n) {
+    if (n > 0 && !player_debuff_blocked()) g_battle.weak += n;
+}
+
+static void player_gain_vulnerable(int n) {
+    if (n > 0 && !player_debuff_blocked()) g_battle.vulnerable += n;
+}
+
+static void player_gain_frail(int n) {
+    if (n > 0 && !player_debuff_blocked()) {
+        g_battle.frail += n;
+        g_battle.frail_just = 1;   /* FrailPower.justApplied */
+    }
+}
+
+static void player_gain_hex(int n) {
+    if (n > 0 && !player_debuff_blocked()) g_battle.hex += n;
+}
+
+static void player_entangle(void) {
+    if (!player_debuff_blocked()) g_battle.entangled = 1;
 }
 
 int battle_enemy_intent_damage(int index) {
@@ -2571,6 +2618,28 @@ int battle_play(int slot, int target) {
         open_pick(PICK_TOP_HAND, 0);
     } else if (strcmp(c->id, "Discovery") == 0) {
         open_pick(PICK_DISCOVERY, 0);
+    } else if (strcmp(c->id, "Panacea") == 0) {
+        g_battle.artifact += magic;   /* ArtifactPower(p, magic) */
+    } else if (strcmp(c->id, "Ghostly") == 0) {
+        g_battle.intangible = 1;      /* IntangiblePlayerPower(p, 1) */
+    } else if (strcmp(c->id, "Dark Shackles") == 0) {
+        /* LoseStrengthAction(9) + GainStrengthPower(9): Strength comes back at
+         * the end of the monster's turn.  Artifact absorbs the debuff. */
+        Enemy *e = &g_battle.enemies[target];
+        if (e->artifact > 0) {
+            e->artifact--;
+        } else {
+            e->strength -= magic;
+            e->shackled += (unsigned char)magic;
+        }
+    } else if (strcmp(c->id, "Enlightenment") == 0) {
+        /* EnlightenmentAction: costForTurn becomes 1 for every card in hand;
+         * the upgraded copy also lowers the card's cost for the combat. */
+        for (int i = 0; i < g_battle.hand_count; i++) {
+            int index = CARD_INDEX(g_battle.hand[i]);
+            if (battle_cost_of(&sts_cards[index]) > 1) g_battle.cost_one_turn[index] = 1;
+            if (up && sts_cards[index].cost > 1) g_battle.cost_one_combat[index] = 1;
+        }
     } else if (strcmp(c->id, "Apotheosis") == 0) {
         upgrade_pile(g_battle.hand, g_battle.hand_count);
         upgrade_pile(g_battle.draw, g_battle.draw_count);
@@ -2818,11 +2887,8 @@ static void enemy_take_turn(int i) {
             enemy_hit(e, i, battle_enemy_intent_damage(i));
             /* Face Slap's two debuffs; Fell only applies Frail.  A zero is a
              * "not used by this move", not one stack. */
-            if (move->value2 > 0) g_battle.vulnerable += move->value2;
-            if (move->value3 > 0) {
-                g_battle.frail += move->value3;
-                g_battle.frail_just = 1;
-            }
+            if (move->value2 > 0) player_gain_vulnerable(move->value2);
+            if (move->value3 > 0) player_gain_frail(move->value3);
             break;
         case MOVE_ATTACK_BLOCK:
             enemy_hit(e, i, battle_enemy_intent_damage(i));
@@ -2838,18 +2904,18 @@ static void enemy_take_turn(int i) {
             e->block += move->value2;
             break;
         case MOVE_WEAK:
-            g_battle.weak += move->value;
+            player_gain_weak(move->value);
             break;
         case MOVE_VULN:
-            g_battle.vulnerable += move->value;
+            player_gain_vulnerable(move->value);
             break;
         case MOVE_DEFEND:
             e->block += move->value;
             e->metallicize += move->value2;
             break;
         case MOVE_TAUNT:
-            g_battle.weak += move->value;
-            g_battle.vulnerable += move->value2;
+            player_gain_weak(move->value);
+            player_gain_vulnerable(move->value2);
             break;
         case MOVE_ANGER:
             /* Anger: +6 Strength and RemoveDebuffsAction on itself. */
@@ -2860,11 +2926,11 @@ static void enemy_take_turn(int i) {
         case MOVE_ATTACK_WEAK:
             /* SlaverBlue Rake: 7 damage, then 1 Weak. */
             enemy_hit(e, i, battle_enemy_intent_damage(i));
-            g_battle.weak += move->value2;
+            player_gain_weak(move->value2);
             break;
         case MOVE_ENTANGLE:
             /* EntanglePower: Attack cards are locked until the turn ends. */
-            g_battle.entangled = 1;
+            player_entangle();
             e->used_entangle = 1;
             break;
         case MOVE_WOUND: {
@@ -2944,10 +3010,9 @@ static void enemy_take_turn(int i) {
         case MOVE_CURSE:
             /* Collector Mega Debuff: 3 Weak, 3 Vulnerable and 3 Frail.  Frail
              * was just applied, so its first end-of-round decrement is skipped. */
-            g_battle.weak += move->value;
-            g_battle.vulnerable += move->value;
-            g_battle.frail += move->value;
-            g_battle.frail_just = 1;
+            player_gain_weak(move->value);
+            player_gain_vulnerable(move->value);
+            player_gain_frail(move->value);
             e->used_ult = 1;
             break;
         case MOVE_REVIVE:
@@ -2955,11 +3020,11 @@ static void enemy_take_turn(int i) {
             break;
         case MOVE_DRAIN:
             /* Chosen Drain: player 3 Weak, itself +3 Strength. */
-            g_battle.weak += move->value;
+            player_gain_weak(move->value);
             e->strength += move->value2;
             break;
         case MOVE_HEX:
-            g_battle.hex += 1;
+            player_gain_hex(1);
             break;
         case MOVE_FLY:
             e->grounded = 0;
@@ -3011,8 +3076,7 @@ static void enemy_take_turn(int i) {
             /* Slime Boss' Prep is a no-op that only queues the Slam intent. */
             break;
         case MOVE_FRAIL:
-            g_battle.frail += move->value;
-            g_battle.frail_just = 1;
+            player_gain_frail(move->value);
             break;
         default:
             break;
@@ -3029,6 +3093,12 @@ static void enemy_take_turn(int i) {
     }
     if (e->vulnerable > 0) e->vulnerable--;
     if (e->weak > 0) e->weak--;
+    /* GainStrengthPower.atEndOfTurn: Dark Shackles gives the lost Strength
+     * back once the monster has acted. */
+    if (e->shackled > 0 && e->hp > 0) {
+        e->strength += e->shackled;
+        e->shackled = 0;
+    }
 }
 
 void battle_end_turn(void) {
