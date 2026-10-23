@@ -46,6 +46,7 @@ typedef struct {
     int event_done;
     char event_result[512];   /* the result page the game shows after a choice */
     char message[96];
+    unsigned int map_seed;    /* battle_rand() when the map was generated */
 } MapState;
 
 extern MapState g_map;

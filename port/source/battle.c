@@ -16,6 +16,7 @@
 #include "battle.h"
 #include "run.h"
 #include "l10n_gen.h"
+#include "save.h"
 
 /* Defined further down; potions use it before its definition. */
 static void damage_enemy(int index, int amount);
@@ -1497,7 +1498,14 @@ void run_start(void) {
     memset(&g_battle, 0, sizeof(g_battle));
     g_battle.hp = 80;
     g_battle.max_hp = 80;
-    g_battle.rng = 0x5EED1234u;
+#if defined(CARD_TEST)
+    g_battle.rng = 0x5EED1234u;   /* the self-test wants a known map */
+#else
+    /* A new run should not replay the previous run's map.  osGetTime() is
+     * milliseconds; the xorshift state must never be zero. */
+    g_battle.rng = (unsigned int)osGetTime();
+    if (g_battle.rng == 0) g_battle.rng = 0x5EED1234u;
+#endif
     for (size_t i = 0; i < sizeof(STARTER) / sizeof(STARTER[0]); i++) {
         int index = battle_find_card(STARTER[i]);
         if (index >= 0 && g_run.deck_count < 64) g_run.deck[g_run.deck_count++] = CARD_ENTRY(index, 0);
@@ -1505,6 +1513,7 @@ void run_start(void) {
     battle_add_relic(RELIC_BURNING_BLOOD);
     map_generate();
     g_run.screen = SCREEN_MAP;
+    save_write();
 }
 
 void run_restart(void) { run_start(); }

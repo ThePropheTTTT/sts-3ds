@@ -8,6 +8,10 @@
 
 本仓库不包含生成资源与 `port/source/*_gen.h`。先按 [数据管线](docs/01-data-pipeline.md) 从自购游戏副本生成，再按 [工具链](docs/02-toolchain.md) 配置 devkitPro，最后运行 `bash port/build.sh`。
 
+## 存档
+
+存档位于 `sdmc:/3ds/sts3ds/save.dat`，在地图界面自动写入；读档会校验 magic、版本与 checksum，并用保存的随机种子重建地图。细节见 [存档](docs/03-save.md)。
+
 ## 免责声明
 
 - 本项目与 Mega Crit、Humble Games 及相关权利方无任何关联，未获得其授权、认可或赞助。

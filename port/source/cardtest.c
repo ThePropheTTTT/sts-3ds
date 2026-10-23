@@ -9,6 +9,7 @@
 #include "battle.h"
 #include "run.h"
 #include "l10n_gen.h"
+#include "save.h"
 
 #define MAX_FAILS 12
 
@@ -2933,6 +2934,27 @@ void card_test_demo_event(int which) {
     g_run.screen = SCREEN_EVENT;
 }
 
+static void test_batch17(void) {
+    /* The save validator itself: a valid blob passes, a flipped checksum,
+     * a newer version and hp > max_hp all fail. */
+    check("save blob valid", save_self_test(), 1);
+
+    /* Loading rebuilds the map from map_seed.  Generate twice from the same
+     * seed and the room types and the chosen node must match. */
+    g_run.act = 1;
+    g_battle.rng = 0x12345678u;
+    map_generate();
+    unsigned int seed = g_map.map_seed;
+    unsigned char types[MAP_ROWS][MAP_COLS];
+    memcpy(types, g_map.type, sizeof(types));
+    int node = map_node(0, 0);
+    g_battle.rng = seed;
+    map_generate();
+    check("save map seed", (int)g_map.map_seed, (int)seed);
+    check("save map types", memcmp(types, g_map.type, sizeof(types)) == 0, 1);
+    check("save map node", map_node(0, 0), node);
+}
+
 void card_test_run(void) {
     s_cases = 0;
     s_fails = 0;
@@ -2953,6 +2975,7 @@ void card_test_run(void) {
     test_batch14();
     test_batch15();
     test_batch16();
+    test_batch17();
     g_run.screen = SCREEN_MAP;
 }
 

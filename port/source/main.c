@@ -17,6 +17,7 @@
 #include "combat_gen.h"
 #include "ui_gen.h"
 #include "map_paper_gen.h"
+#include "save.h"
 #if defined(CARD_TEST)
 #include "cardtest.h"
 #endif
@@ -157,6 +158,7 @@ static int s_potion_sel;
 static int s_pending_potion = -1;
 static int s_konami_pos;
 static int s_last_screen = -1;
+static int s_new_game_arm;   /* B twice on the map starts a fresh run */
 static char s_toast[96];
 static int s_toast_ttl;
 
@@ -3123,6 +3125,23 @@ static void handle_buttons(u32 kDown) {
             map_generate();
             break;
         }
+        /* B twice starts over.  The first press only arms it, so a stray tap
+         * on the map cannot throw a run away. */
+        if (kDown & KEY_B) {
+            if (s_new_game_arm > 0) {
+                s_new_game_arm = 0;
+                save_clear();   /* do not leave the abandoned run behind */
+                run_start();
+                s_last_screen = -1;   /* reset the per-screen cursors */
+                s_map_sel = 0;
+                break;
+            }
+            s_new_game_arm = 120;
+            snprintf(g_map.message, sizeof(g_map.message),
+                     "再按一次 B 放弃本局，重新开始");
+            break;
+        }
+        if (s_new_game_arm > 0 && --s_new_game_arm == 0) g_map.message[0] = 0;
         /* Up/down pan the tall map; left/right pick the next room. */
         if (kDown & KEY_UP) s_map_view = map_clamp_view(s_map_view - MAP_PAN_STEP);
         if (kDown & KEY_DOWN) s_map_view = map_clamp_view(s_map_view + MAP_PAN_STEP);
@@ -3286,7 +3305,11 @@ int main(int argc, char **argv) {
 
     font_init();
     load_art();
-    run_start();
+#if defined(CARD_TEST)
+    run_start();   /* the self-test starts from a known state, never a save */
+#else
+    if (!save_load()) run_start();
+#endif
 
 #if defined(CARD_TEST)
     /* build.sh CARD_TEST=1: run the card assertions and show the report
@@ -3369,7 +3392,10 @@ int main(int argc, char **argv) {
     while (aptMainLoop()) {
         hidScanInput();
         u32 kDown = hidKeysDown();
-        if (kDown & KEY_START) break;
+        if (kDown & KEY_START) {
+            save_write();
+            break;
+        }
 
         if (g_run.screen != s_last_screen) {
             reset_gestures();
@@ -3385,6 +3411,7 @@ int main(int argc, char **argv) {
             s_shop_page = 0;
             s_event_sel = 0;
             s_pick_sel = 0;
+            s_new_game_arm = 0;
             if (g_run.screen == SCREEN_FIGHT && g_run.upgrade_name[0]) {
                 snprintf(s_toast, sizeof(s_toast), "%s", g_run.upgrade_name);
                 s_toast_ttl = 150;

@@ -6,6 +6,7 @@
 #include "battle.h"
 #include "run.h"
 #include "l10n_gen.h"
+#include "save.h"
 
 MapState g_map;
 
@@ -285,6 +286,7 @@ static void map_assign_room_types(void) {
  * shares (shop 5%, rest 12%, event 22%, elite 8%). */
 void map_generate(void) {
     memset(&g_map, 0, sizeof(g_map));
+    g_map.map_seed = g_battle.rng;
     memset(s_edge, 0, sizeof(s_edge));
     memset(s_edge_n, 0, sizeof(s_edge_n));
     memset(s_parent, 0, sizeof(s_parent));
@@ -318,6 +320,7 @@ void run_advance_act(void) {
     map_generate();
     g_map.gold = gold;
     g_run.screen = SCREEN_MAP;
+    save_write();
 }
 
 int map_node(int row, int col) {
@@ -359,6 +362,7 @@ int map_can_move(int row, int col) {
 
 void map_after_node(void) {
     g_run.screen = SCREEN_MAP;
+    save_write();
 }
 
 /* AbstractCard.getPrice (:1900-1922).  Basics and specials are 9999: the
