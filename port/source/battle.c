@@ -136,9 +136,15 @@ static const char *EXHAUSTS[] = {
     "Reaper", "Feed", "Offering", "Exhume", "Slimed", "Wound", "Burn", "Dazed",
     "Dramatic Entrance", "RitualDagger", "PanicButton",
     "Burning Pact", "Warcry", "Discovery", "Thinking Ahead",
+    "Apotheosis", "Madness", "Chrysalis", "Metamorphosis", "Infernal Blade",
+    "Transmutation", "Violence",
 };
 
-static int card_exhausts(const CardDef *c) {
+static int card_exhausts(const CardDef *c, int up) {
+    /* Secret Technique and Secret Weapon lose Exhaust when upgraded. */
+    if (strcmp(c->id, "Secret Technique") == 0 || strcmp(c->id, "Secret Weapon") == 0) {
+        return up ? 0 : 1;
+    }
     for (size_t i = 0; i < sizeof(EXHAUSTS) / sizeof(EXHAUSTS[0]); i++) {
         if (strcmp(c->id, EXHAUSTS[i]) == 0) return 1;
     }
@@ -160,6 +166,9 @@ int battle_cost_of(const CardDef *c) {
     {
         int index = (int)(c - sts_cards);
         if (index >= 0 && index < 160 && g_battle.zero_cost[index]) return 0;
+        /* setCostForTurn(0): free for the current turn only (Infernal Blade,
+         * Transmutation).  The turn array is cleared in start_player_turn. */
+        if (index >= 0 && index < 160 && g_battle.zero_turn[index]) return 0;
     }
     if (strcmp(c->id, "Blood for Blood") == 0) {
         int cost = c->cost - g_battle.damaged;
@@ -219,6 +228,8 @@ static void start_player_turn(void) {
     /* Barricade: block survives the start of the turn. */
     if (!pw(POW_BARRICADE)) g_battle.block = 0;
     g_battle.no_draw = 0;
+    memset(g_battle.zero_turn, 0, sizeof(g_battle.zero_turn));
+    g_battle.force_exhaust = 0;
     g_battle.energy = g_battle.max_energy;
     /* BerserkPower.atStartOfTurn: one extra energy every turn. */
     if (pw(POW_BERSERK)) g_battle.energy += 1;
@@ -1691,6 +1702,53 @@ static void add_random_colorless_to_hand(void) {
     g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(pick, 0);
 }
 
+/* returnTrulyRandomCardInCombat(type): any card of that type in any colour.
+ * Statuses and Curses are excluded, matching the vanilla combat pools. */
+static int random_card_of_type(int type) {
+    int pool[STS_CARD_COUNT];
+    int n = 0;
+    for (int i = 0; i < STS_CARD_COUNT; i++) {
+        const CardDef *d = &sts_cards[i];
+        if (d->type == type && d->rarity >= 1 && d->rarity <= 3) pool[n++] = i;
+    }
+    return n == 0 ? -1 : pool[rnd() % (unsigned int)n];
+}
+
+/* returnTrulyRandomColorlessCardInCombat: same, restricted to colourless. */
+static int random_colorless_card(void) {
+    int pool[STS_CARD_COUNT];
+    int n = 0;
+    for (int i = 0; i < STS_CARD_COUNT; i++) {
+        const CardDef *d = &sts_cards[i];
+        if (d->color == 4 && d->rarity >= 1 && d->rarity <= 3) pool[n++] = i;
+    }
+    return n == 0 ? -1 : pool[rnd() % (unsigned int)n];
+}
+
+static void draw_insert_random(int entry) {
+    if (g_battle.draw_count >= 64) return;
+    int at = (int)(rnd() % (unsigned int)(g_battle.draw_count + 1));
+    for (int i = g_battle.draw_count; i > at; i--) g_battle.draw[i] = g_battle.draw[i - 1];
+    g_battle.draw[at] = entry;
+    g_battle.draw_count++;
+}
+
+/* MakeTempCardInHandAction: the hand limit of 10 sends the card to the
+ * discard pile instead. */
+static void add_card_to_hand_or_discard(int index, int up) {
+    int entry = CARD_ENTRY(index, up);
+    if (g_battle.hand_count < 10) {
+        g_battle.hand[g_battle.hand_count++] = entry;
+    } else if (g_battle.discard_count < 64) {
+        g_battle.discard[g_battle.discard_count++] = entry;
+    }
+}
+
+static void draw_remove(int at) {
+    for (int i = at; i < g_battle.draw_count - 1; i++) g_battle.draw[i] = g_battle.draw[i + 1];
+    if (g_battle.draw_count > 0) g_battle.draw_count--;
+}
+
 /* MayhemPower.atStartOfTurn -> PlayTopCardAction: the top card of the draw
  * pile is played for free against a random enemy, then discarded/exhausted. */
 static void mayhem_play_top(void) {
@@ -1790,6 +1848,7 @@ static void flush_necro(void) {
 
 /* The combat is over: potion drop, boss relic or reward roll, screen change. */
 static void win_battle(void) {
+    if (g_battle.phase == PHASE_WIN) return;   /* a nested play already won */
     g_battle.phase = PHASE_WIN;
     if ((rnd() % 100) < 35) battle_add_random_potion();
     if (battle_has_relic(RELIC_BURNING_BLOOD)) {
@@ -1861,6 +1920,11 @@ static int open_pick(int mode, int extra) {
         }
     } else if (mode == PICK_EXHUME) {
         for (int i = 0; i < g_battle.exhaust_count; i++) pick_push(i);
+    } else if (mode == PICK_DRAW_SKILL || mode == PICK_DRAW_ATTACK) {
+        int type = mode == PICK_DRAW_SKILL ? 1 : 0;
+        for (int i = 0; i < g_battle.draw_count; i++) {
+            if (sts_cards[CARD_INDEX(g_battle.draw[i])].type == type) pick_push(i);
+        }
     } else if (mode == PICK_DISCOVERY) {
         for (int attempt = 0; attempt < 200 && g_battle.pick_count < 3; attempt++) {
             int index = (int)(rnd() % (unsigned int)STS_CARD_COUNT);
@@ -1897,6 +1961,9 @@ int battle_pick_card(int index) {
         return CARD_INDEX(g_battle.hand[source]);
     case PICK_EXHUME:
         return CARD_INDEX(g_battle.exhaust[source]);
+    case PICK_DRAW_SKILL:
+    case PICK_DRAW_ATTACK:
+        return CARD_INDEX(g_battle.draw[source]);
     default:
         return source;
     }
@@ -1910,6 +1977,9 @@ int battle_pick_up(int index) {
     }
     if (g_battle.pick_mode == PICK_EXHUME) {
         return CARD_UPGRADED(g_battle.exhaust[g_battle.pick_source[index]]);
+    }
+    if (g_battle.pick_mode == PICK_DRAW_SKILL || g_battle.pick_mode == PICK_DRAW_ATTACK) {
+        return CARD_UPGRADED(g_battle.draw[g_battle.pick_source[index]]);
     }
     return 0;
 }
@@ -1966,6 +2036,20 @@ int battle_pick_choose(int index) {
         if (g_battle.hand_count < 10) g_battle.hand[g_battle.hand_count++] = entry;
         break;
     }
+    case PICK_DRAW_SKILL:
+    case PICK_DRAW_ATTACK: {
+        /* SkillFromDeckToHandAction / AttackFromDeckToHandAction: the chosen
+         * card leaves the draw pile and goes to the hand, or to the discard
+         * pile when the hand is full. */
+        int entry = g_battle.draw[source];
+        draw_remove(source);
+        if (g_battle.hand_count < 10) {
+            g_battle.hand[g_battle.hand_count++] = entry;
+        } else if (g_battle.discard_count < 64) {
+            g_battle.discard[g_battle.discard_count++] = entry;
+        }
+        break;
+    }
     case PICK_DISCOVERY: {
         if (g_battle.hand_count < 10) {
             g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(source, 0);
@@ -1987,6 +2071,64 @@ void battle_pick_cancel(void) {
     if (g_run.screen != SCREEN_PICK) return;
     pick_clear();
     g_run.screen = SCREEN_FIGHT;
+}
+
+/* ApotheosisAction.canUpgrade: Statuses and Curses stay as they are, and a
+ * card with no upgrade text has nothing to gain. */
+static int card_can_upgrade(int index) {
+    if (index < 0 || index >= STS_CARD_COUNT) return 0;
+    const CardDef *d = &sts_cards[index];
+    if (d->type > 2) return 0;
+    return d->up_damage || d->up_block || d->up_magic || strcmp(d->text, d->text_up) != 0;
+}
+
+static void upgrade_pile(int *pile, int count) {
+    for (int i = 0; i < count; i++) {
+        int index = CARD_INDEX(pile[i]);
+        if (!CARD_UPGRADED(pile[i]) && card_can_upgrade(index)) {
+            pile[i] = CARD_ENTRY(index, 1);
+        }
+    }
+}
+
+/* Havoc's PlayTopCardAction: shuffle the discard pile in when the draw pile is
+ * empty, then play the top card for free and exhaust it. */
+static int s_havoc_depth;
+
+static void havoc_play_top(void) {
+    if (s_havoc_depth > 8) return;
+    if (g_battle.draw_count == 0) {
+        if (g_battle.discard_count == 0) return;
+        memcpy(g_battle.draw, g_battle.discard, sizeof(int) * (size_t)g_battle.discard_count);
+        g_battle.draw_count = g_battle.discard_count;
+        g_battle.discard_count = 0;
+        shuffle(g_battle.draw, g_battle.draw_count);
+    }
+    if (g_battle.draw_count == 0 || g_battle.hand_count >= 10) return;
+    int entry = g_battle.draw[--g_battle.draw_count];
+    g_battle.hand[g_battle.hand_count++] = entry;
+    int slot = g_battle.hand_count - 1;
+    int target = sts_cards[CARD_INDEX(entry)].target == 0 ? random_alive_enemy() : -1;
+    s_havoc_depth++;
+    g_battle.free_play = 1;
+    g_battle.force_exhaust = 1;
+    int rc = battle_play(slot, target);
+    g_battle.free_play = 0;
+    g_battle.force_exhaust = 0;
+    s_havoc_depth--;
+    if (rc != 0) {
+        /* The card could not be played (Entangled, no target): it stays in
+         * hand in vanilla's queue only until the action resolves, so take it
+         * out and exhaust it rather than leaving a stuck card behind. */
+        for (int i = 0; i < g_battle.hand_count; i++) {
+            if (g_battle.hand[i] == entry) {
+                for (int j = i; j < g_battle.hand_count - 1; j++) g_battle.hand[j] = g_battle.hand[j + 1];
+                g_battle.hand_count--;
+                exhaust_card(entry);
+                break;
+            }
+        }
+    }
 }
 
 /* Every card that needs more than "damage and/or block" is handled here. */
@@ -2013,6 +2155,16 @@ int battle_play(int slot, int target) {
             if (sts_cards[CARD_INDEX(g_battle.hand[i])].type != 0) return -5;
         }
     }
+    /* Secret Technique / Secret Weapon canUse: the draw pile must hold at
+     * least one card of the matching type. */
+    if (strcmp(c->id, "Secret Technique") == 0 || strcmp(c->id, "Secret Weapon") == 0) {
+        int want = strcmp(c->id, "Secret Technique") == 0 ? 1 : 0;
+        int found = 0;
+        for (int i = 0; i < g_battle.draw_count; i++) {
+            if (sts_cards[CARD_INDEX(g_battle.draw[i])].type == want) found = 1;
+        }
+        if (!found) return -2;
+    }
     int up = battle_hand_up(slot);
     /* An upgraded Blind/Trip is card.target == 0 in the table but hits every
      * enemy, so -1 is a legal target for it. */
@@ -2020,12 +2172,9 @@ int battle_play(int slot, int target) {
     if (c->target == 0 && !enemy_alive(target) && !aoe_skill) return -4;
 
     int magic = card_magic(c, up);
-    int cost = c->cost;
-    /* BloodForBlood.tookDamage(): one energy off per HP-loss event, floor 0. */
-    if (strcmp(c->id, "Blood for Blood") == 0) {
-        cost -= g_battle.damaged;
-        if (cost < 0) cost = 0;
-    }
+    /* battle_cost_of already handles Blood for Blood's discount and every
+     * zero-cost effect; using c->cost here used to ignore all of them. */
+    int cost = battle_cost_of(c);
     /* CorruptionPower: every Skill costs 0 (they also exhaust, below). */
     if (pw(POW_CORRUPTION) && c->type == 1 && cost >= 0) cost = 0;
     int x_cost = 0;
@@ -2387,7 +2536,8 @@ int battle_play(int slot, int target) {
     /* Status cards are exhausted when played, not discarded (vanilla).
      * Everything else in EXHAUSTS carries the Exhaust keyword, and Corruption
      * exhausts every Skill.  Power cards stay in play and never come back. */
-    if (card_exhausts(c) || (pw(POW_CORRUPTION) && c->type == 1)) {
+    if (g_battle.force_exhaust || card_exhausts(c, up) || (pw(POW_CORRUPTION) && c->type == 1)) {
+        g_battle.force_exhaust = 0;
         exhaust_card(entry);
     } else if (c->type == 2) {
         /* power: removed from the deck for this combat */
@@ -2421,6 +2571,71 @@ int battle_play(int slot, int target) {
         open_pick(PICK_TOP_HAND, 0);
     } else if (strcmp(c->id, "Discovery") == 0) {
         open_pick(PICK_DISCOVERY, 0);
+    } else if (strcmp(c->id, "Apotheosis") == 0) {
+        upgrade_pile(g_battle.hand, g_battle.hand_count);
+        upgrade_pile(g_battle.draw, g_battle.draw_count);
+        upgrade_pile(g_battle.discard, g_battle.discard_count);
+        upgrade_pile(g_battle.exhaust, g_battle.exhaust_count);
+    } else if (strcmp(c->id, "Madness") == 0) {
+        /* MadnessAction: one random card in hand becomes free for the rest of
+         * the combat.  costForTurn > 0 is not modelled separately, so the
+         * base cost selects the candidate. */
+        int candidates[10];
+        int n = 0;
+        for (int i = 0; i < g_battle.hand_count; i++) {
+            if (battle_cost_of(&sts_cards[CARD_INDEX(g_battle.hand[i])]) > 0) candidates[n++] = i;
+        }
+        if (n > 0) {
+            int index = CARD_INDEX(g_battle.hand[candidates[rnd() % (unsigned int)n]]);
+            g_battle.zero_cost[index] = 1;
+        }
+    } else if (strcmp(c->id, "Chrysalis") == 0 || strcmp(c->id, "Metamorphosis") == 0) {
+        int type = strcmp(c->id, "Chrysalis") == 0 ? 1 : 0;
+        for (int i = 0; i < magic; i++) {
+            int pick = random_card_of_type(type);
+            if (pick < 0) continue;
+            if (sts_cards[pick].cost > 0) g_battle.zero_cost[pick] = 1;
+            draw_insert_random(CARD_ENTRY(pick, 0));
+        }
+    } else if (strcmp(c->id, "Infernal Blade") == 0) {
+        int pick = random_card_of_type(0);
+        if (pick >= 0) {
+            g_battle.zero_turn[pick] = 1;   /* setCostForTurn(0) */
+            add_card_to_hand_or_discard(pick, 0);
+        }
+    } else if (strcmp(c->id, "Transmutation") == 0) {
+        for (int i = 0; i < x_cost; i++) {
+            int pick = random_colorless_card();
+            if (pick < 0) continue;
+            g_battle.zero_turn[pick] = 1;   /* setCostForTurn(0) */
+            add_card_to_hand_or_discard(pick, up ? 1 : 0);
+        }
+    } else if (strcmp(c->id, "Violence") == 0) {
+        for (int n = 0; n < magic; n++) {
+            int candidates[64];
+            int count = 0;
+            for (int i = 0; i < g_battle.draw_count; i++) {
+                if (sts_cards[CARD_INDEX(g_battle.draw[i])].type == 0) candidates[count++] = i;
+            }
+            if (count == 0) break;
+            int at = candidates[rnd() % (unsigned int)count];
+            int picked = g_battle.draw[at];
+            draw_remove(at);
+            if (g_battle.hand_count < 10) g_battle.hand[g_battle.hand_count++] = picked;
+            else if (g_battle.discard_count < 64) g_battle.discard[g_battle.discard_count++] = picked;
+        }
+    } else if (strcmp(c->id, "Impatience") == 0) {
+        int has_attack = 0;
+        for (int i = 0; i < g_battle.hand_count; i++) {
+            if (sts_cards[CARD_INDEX(g_battle.hand[i])].type == 0) has_attack = 1;
+        }
+        if (!has_attack) draw_cards(magic);
+    } else if (strcmp(c->id, "Havoc") == 0) {
+        havoc_play_top();
+    } else if (strcmp(c->id, "Secret Technique") == 0) {
+        open_pick(PICK_DRAW_SKILL, 0);
+    } else if (strcmp(c->id, "Secret Weapon") == 0) {
+        open_pick(PICK_DRAW_ATTACK, 0);
     }
 
     /* HexPower.onUseCard fires from UseCardAction, after the card's own

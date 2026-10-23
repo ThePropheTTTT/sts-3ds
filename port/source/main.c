@@ -2500,6 +2500,8 @@ static const char *pick_title(int mode) {
     case PICK_COPY_HAND:    return "复制一张牌";
     case PICK_EXHUME:       return "从消耗堆取回一张牌";
     case PICK_DISCOVERY:    return "发现：选择一张牌加入手牌";
+    case PICK_DRAW_SKILL:   return "从抽牌堆选择一张技能牌";
+    case PICK_DRAW_ATTACK:  return "从抽牌堆选择一张攻击牌";
     default:                return "选择一张牌";
     }
 }
@@ -3286,11 +3288,12 @@ int main(int argc, char **argv) {
             if (kDown & KEY_A) card_test_demo_fight(6);   /* three Slavers */
             /* B cycles the set pieces: Automaton (7), Collector (8), Gremlin
              * Leader (9), act 3 background (10), then Slime Boss (11), Nob
-             * (12), Acid Slimes (13), Jaw Worm (14) and the split slimes (15). */
+             * (12), Acid Slimes (13), Jaw Worm (14), the split slimes (15),
+             * then the two draw-pile pickers (16, 17). */
             if (kDown & KEY_B) {
                 card_test_demo_fight(s_boss_demo);
                 s_boss_demo++;
-                if (s_boss_demo > 15) s_boss_demo = 7;
+                if (s_boss_demo > 17) s_boss_demo = 7;
             }
         }
         update_play_fx();

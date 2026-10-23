@@ -2201,6 +2201,208 @@ static void test_batch13(void) {
     check("jaw chomp damage", g_battle.hp, 69);
 }
 
+static void test_batch14(void) {
+    /* Madness: one random card in hand becomes free for the combat, and the
+     * next play must actually pay zero (battle_play used to read c->cost). */
+    fresh(200);
+    g_battle.energy = 3;
+    hand("Madness", 0);
+    hand_add("Strike_R");
+    hand_add("Defend_R");
+    battle_play(0, 0);
+    check("madness energy", g_battle.energy, 2);
+    check("madness exhaust", g_battle.exhaust_count, 1);
+    {
+        int free_cards = 0;
+        for (int i = 0; i < g_battle.hand_count; i++) {
+            if (battle_card_cost(i) == 0) free_cards++;
+        }
+        check("madness one free", free_cards, 1);
+        for (int i = 0; i < g_battle.hand_count; i++) {
+            if (battle_card_cost(i) == 0) {
+                battle_play(i, 0);
+                check("madness free play", g_battle.energy, 2);
+                break;
+            }
+        }
+    }
+
+    /* Apotheosis: every pile is upgraded. */
+    fresh(200);
+    g_battle.energy = 3;
+    hand("Apotheosis", 0);
+    hand_add("Strike_R");
+    hand_add("Defend_R");
+    pile_add(g_battle.draw, &g_battle.draw_count, "Bash");
+    pile_add(g_battle.discard, &g_battle.discard_count, "Cleave");
+    pile_add(g_battle.exhaust, &g_battle.exhaust_count, "Pummel");
+    battle_play(0, 0);
+    check("apotheosis energy", g_battle.energy, 1);
+    check("apotheosis hand up", CARD_UPGRADED(g_battle.hand[0]) && CARD_UPGRADED(g_battle.hand[1]), 1);
+    check("apotheosis draw up", CARD_UPGRADED(g_battle.draw[0]), 1);
+    check("apotheosis discard up", CARD_UPGRADED(g_battle.discard[0]), 1);
+    check("apotheosis exhaust up", CARD_UPGRADED(g_battle.exhaust[0]), 1);
+
+    /* Chrysalis / Metamorphosis: three random Skills / Attacks into the draw
+     * pile, free if they used to cost something. */
+    fresh(200);
+    hand("Chrysalis", 0);
+    battle_play(0, 0);
+    check("chrysalis count", g_battle.draw_count, 3);
+    {
+        int skills = 0, free_ok = 1;
+        for (int i = 0; i < g_battle.draw_count; i++) {
+            int index = CARD_INDEX(g_battle.draw[i]);
+            if (sts_cards[index].type == 1) skills++;
+            if (sts_cards[index].cost > 0 && !g_battle.zero_cost[index]) free_ok = 0;
+        }
+        check("chrysalis skills", skills, 3);
+        check("chrysalis free", free_ok, 1);
+    }
+    fresh(200);
+    hand("Metamorphosis", 0);
+    battle_play(0, 0);
+    check("metamorphosis count", g_battle.draw_count, 3);
+    {
+        int attacks = 0;
+        for (int i = 0; i < g_battle.draw_count; i++) {
+            if (sts_cards[CARD_INDEX(g_battle.draw[i])].type == 0) attacks++;
+        }
+        check("metamorphosis attacks", attacks, 3);
+    }
+
+    /* Secret Technique / Weapon: choose one matching card out of the draw pile. */
+    fresh(200);
+    hand("Secret Technique", 0);
+    pile_add(g_battle.draw, &g_battle.draw_count, "Defend_R");
+    pile_add(g_battle.draw, &g_battle.draw_count, "Bash");
+    pile_add(g_battle.draw, &g_battle.draw_count, "Strike_R");
+    pile_add(g_battle.draw, &g_battle.draw_count, "Defend_R");
+    battle_play(0, 0);
+    check("secret technique picker", g_run.screen == SCREEN_PICK, 1);
+    check("secret technique count", battle_pick_count(), 2);
+    check("secret technique type", sts_cards[battle_pick_card(0)].type, 1);
+    battle_pick_choose(0);
+    check("secret technique hand", g_battle.hand_count, 1);
+    check("secret technique hand type", sts_cards[CARD_INDEX(g_battle.hand[0])].type, 1);
+    check("secret technique draw", g_battle.draw_count, 3);
+    check("secret technique exhaust", g_battle.exhaust_count, 1);
+
+    fresh(200);
+    hand("Secret Technique", 1);
+    pile_add(g_battle.draw, &g_battle.draw_count, "Defend_R");
+    battle_play(0, 0);
+    check("secret technique plus picker", g_run.screen == SCREEN_PICK, 1);
+    battle_pick_choose(0);
+    check("secret technique plus no exhaust", g_battle.exhaust_count, 0);
+
+    fresh(200);
+    hand("Secret Technique", 0);
+    {
+        int rc = battle_play(0, 0);
+        check("secret technique canuse", rc, -2);
+        check("secret technique canuse energy", g_battle.energy, 3);
+        check("secret technique canuse hand", g_battle.hand_count, 1);
+    }
+
+    fresh(200);
+    hand("Secret Weapon", 0);
+    pile_add(g_battle.draw, &g_battle.draw_count, "Bash");
+    pile_add(g_battle.draw, &g_battle.draw_count, "Strike_R");
+    pile_add(g_battle.draw, &g_battle.draw_count, "Defend_R");
+    battle_play(0, 0);
+    check("secret weapon count", battle_pick_count(), 2);
+    check("secret weapon type", sts_cards[battle_pick_card(0)].type, 0);
+    battle_pick_choose(0);
+    check("secret weapon hand", g_battle.hand_count, 1);
+
+    /* Infernal Blade: random Attack in hand, free this turn only. */
+    fresh(200);
+    hand("Infernal Blade", 0);
+    battle_play(0, 0);
+    check("infernal energy", g_battle.energy, 2);
+    check("infernal hand", g_battle.hand_count, 1);
+    check("infernal attack", sts_cards[CARD_INDEX(g_battle.hand[0])].type, 0);
+    {
+        int index = CARD_INDEX(g_battle.hand[0]);
+        check("infernal zero turn", g_battle.zero_turn[index], 1);
+        check("infernal cost", battle_card_cost(0), 0);
+        battle_start_turn_for_test();
+        check("infernal cleared", g_battle.zero_turn[index], 0);
+    }
+
+    /* Transmutation: one random colourless card per energy, all free. */
+    fresh(200);
+    g_battle.energy = 3;
+    hand("Transmutation", 0);
+    battle_play(0, 0);
+    check("transmutation energy", g_battle.energy, 0);
+    check("transmutation hand", g_battle.hand_count, 3);
+    {
+        int colourless = 0, free_ok = 1;
+        for (int i = 0; i < g_battle.hand_count; i++) {
+            int index = CARD_INDEX(g_battle.hand[i]);
+            if (sts_cards[index].color == 4) colourless++;
+            if (!g_battle.zero_turn[index]) free_ok = 0;
+        }
+        check("transmutation colourless", colourless, 3);
+        check("transmutation free", free_ok, 1);
+    }
+    fresh(200);
+    g_battle.energy = 2;
+    hand("Transmutation", 1);
+    battle_play(0, 0);
+    check("transmutation plus hand", g_battle.hand_count, 2);
+    check("transmutation plus up", CARD_UPGRADED(g_battle.hand[0]) && CARD_UPGRADED(g_battle.hand[1]), 1);
+
+    /* Violence: up to three random Attacks out of the draw pile. */
+    fresh(200);
+    hand("Violence", 0);
+    pile_add(g_battle.draw, &g_battle.draw_count, "Strike_R");
+    pile_add(g_battle.draw, &g_battle.draw_count, "Defend_R");
+    pile_add(g_battle.draw, &g_battle.draw_count, "Bash");
+    pile_add(g_battle.draw, &g_battle.draw_count, "Cleave");
+    pile_add(g_battle.draw, &g_battle.draw_count, "Defend_R");
+    battle_play(0, 0);
+    check("violence hand", g_battle.hand_count, 3);
+    check("violence draw", g_battle.draw_count, 2);
+    {
+        int attacks = 0;
+        for (int i = 0; i < g_battle.hand_count; i++) {
+            if (sts_cards[CARD_INDEX(g_battle.hand[i])].type == 0) attacks++;
+        }
+        check("violence attacks", attacks, 3);
+    }
+
+    /* Impatience: draw only when the hand holds no Attack. */
+    fresh(200);
+    hand("Impatience", 0);
+    for (int i = 0; i < 5; i++) pile_add(g_battle.draw, &g_battle.draw_count, "Defend_R");
+    battle_play(0, 0);
+    check("impatience drew", g_battle.hand_count, 2);
+    fresh(200);
+    hand("Impatience", 0);
+    hand_add("Strike_R");
+    for (int i = 0; i < 5; i++) pile_add(g_battle.draw, &g_battle.draw_count, "Defend_R");
+    battle_play(0, 0);
+    check("impatience held", g_battle.hand_count, 1);
+
+    /* Havoc: play the top card for free and exhaust it. */
+    fresh(200);
+    hand("Havoc", 0);
+    pile_add(g_battle.draw, &g_battle.draw_count, "Bash");
+    battle_play(0, 0);
+    check("havoc energy", g_battle.energy, 2);
+    check("havoc damage", 200 - g_battle.enemies[0].hp, 8);
+    check("havoc vulnerable", g_battle.enemies[0].vulnerable, 2);
+    check("havoc exhaust", g_battle.exhaust_count, 1);
+    fresh(200);
+    hand("Havoc", 0);
+    pile_add(g_battle.discard, &g_battle.discard_count, "Strike_R");
+    battle_play(0, 0);
+    check("havoc shuffle damage", 200 - g_battle.enemies[0].hp, 6);
+    check("havoc shuffle exhaust", g_battle.exhaust_count, 1);
+}
 
 /* ---- picker preview ---------------------------------------------------- */
 
@@ -2225,8 +2427,30 @@ void card_test_demo_pick(int which) {
     g_battle.phase = PHASE_PLAYER;
     g_battle.pending_split = -1;
 
-    if (which < 0 || which > 2) which = 0;
+    if (which < 0 || which > 4) which = 0;
     g_battle.pick_sel = 0;
+    if (which == 3 || which == 4) {
+        static const char *const SKILL_DRAW[] = {
+            "Defend_R", "Shrug It Off", "True Grit", "Warcry", "Armaments",
+            "Battle Trance", "Entrench", "Ghostly Armor", "Second Wind",
+            "Burning Pact", "Defend_R", "Defend_R",
+        };
+        static const char *const ATTACK_DRAW[] = {
+            "Strike_R", "Bash", "Cleave", "Iron Wave", "Twin Strike",
+            "Pommel Strike", "Thunderclap", "Body Slam", "Clash", "Anger",
+            "Strike_R", "Strike_R",
+        };
+        const char *const *cards = which == 3 ? SKILL_DRAW : ATTACK_DRAW;
+        g_battle.pick_mode = which == 3 ? PICK_DRAW_SKILL : PICK_DRAW_ATTACK;
+        for (int i = 0; i < 12; i++) {
+            g_battle.draw[i] = CARD_ENTRY(battle_find_card(cards[i]), 0);
+            g_battle.pick_source[i] = i;
+        }
+        g_battle.draw_count = 12;
+        g_battle.pick_count = 12;
+        g_run.screen = SCREEN_PICK;
+        return;
+    }
     if (which == 0) {
         g_battle.pick_mode = PICK_UPGRADE_HAND;
         for (int i = 0; i < 6; i++) {
@@ -2263,6 +2487,10 @@ void card_test_demo_fight(int which) {
     static const char *const HAND_CARDS[] = {
         "Strike_R", "Defend_R", "Bash", "Strike_R", "Defend_R",
     };
+    if (which == 16 || which == 17) {
+        card_test_demo_pick(which == 16 ? 3 : 4);
+        return;
+    }
     /* 0 Champ, 1 Book of Stabbing, 2 Byrds, 3 Chosen, 4 Parasite,
      * 5 Spheric Guardian, 6 the three Slavers, 7 BronzeAutomaton with its
      * two summoned orbs, 8 the Collector with its Torch Heads, 9 the Gremlin
@@ -2421,6 +2649,7 @@ void card_test_run(void) {
     test_batch11();
     test_batch12();
     test_batch13();
+    test_batch14();
     g_run.screen = SCREEN_MAP;
 }
 

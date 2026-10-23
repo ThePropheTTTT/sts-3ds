@@ -141,6 +141,8 @@ typedef struct {
 #define PICK_COPY_HAND 4       /* Dual Wield: copy an Attack or Power */
 #define PICK_EXHUME 5          /* Exhume: take a card back out of the exhaust pile */
 #define PICK_DISCOVERY 6       /* Discovery: one of three random cards */
+#define PICK_DRAW_SKILL 7      /* Secret Technique: take a Skill from the draw pile */
+#define PICK_DRAW_ATTACK 8     /* Secret Weapon: take an Attack from the draw pile */
 
 typedef struct {
     int hp;
@@ -178,6 +180,8 @@ typedef struct {
     int damaged;         /* HP-loss events this combat (Blood for Blood) */
     int necro_pending;   /* Necronomicurse copies waiting for the hand */
     unsigned char zero_cost[160];   /* card indexes that cost 0 this combat */
+    unsigned char zero_turn[160];   /* card indexes that cost 0 this turn */
+    int force_exhaust;              /* the next card played is exhausted (Havoc) */
     int pick_mode;       /* PICK_* while SCREEN_PICK is up */
     int pick_extra;      /* draw count / copy count / chosen count */
     int pick_sel;
