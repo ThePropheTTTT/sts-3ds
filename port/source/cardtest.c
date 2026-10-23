@@ -2088,10 +2088,13 @@ void card_test_demo_fight(int which) {
     /* 0 Champ, 1 Book of Stabbing, 2 Byrds, 3 Chosen, 4 Parasite,
      * 5 Spheric Guardian, 6 the three Slavers, 7 BronzeAutomaton with its
      * two summoned orbs, 8 the Collector with its Torch Heads, 9 the Gremlin
-     * Leader with three different minions.  Same spawn path the real
-     * encounter uses, then a hand so the bottom screen has cards to draw. */
-    if (which < 0 || which > 9) which = 0;
-    if (which == 6) battle_test_spawn_slavers();
+     * Leader with three different minions, 10 the same Champ fight with the
+     * act 3 background (a preview of beyondScene's floor stack).  Same spawn
+     * path the real encounter uses, then a hand so the bottom screen has
+     * cards to draw. */
+    if (which < 0 || which > 10) which = 0;
+    if (which == 10) battle_test_spawn_act2(1);
+    else if (which == 6) battle_test_spawn_slavers();
     else if (which == 7) {
         battle_test_spawn_automaton();
         battle_test_enemy_turn(0);   /* Spawn Orbs, then Flail */
@@ -2106,7 +2109,7 @@ void card_test_demo_fight(int which) {
         battle_test_spawn_gremlin_minion(3, 2);
     } else if (which <= 1) battle_test_spawn_act2(which == 0 ? 1 : 0);
     else battle_test_spawn_act2_monster(which - 2);
-    g_run.act = 2;     /* display is 1-based: the city */
+    g_run.act = (which == 10) ? 3 : 2;   /* display is 1-based: city, beyond */
     g_map.gold = 99;
     g_run.screen = SCREEN_FIGHT;
     g_battle.phase = PHASE_PLAYER;

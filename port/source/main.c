@@ -3271,10 +3271,10 @@ int main(int argc, char **argv) {
             if (kDown & KEY_RIGHT) card_test_demo_fight(5);
             if (kDown & KEY_A) card_test_demo_fight(6);   /* three Slavers */
             /* B cycles the act 2 set pieces: Automaton (7), Collector (8),
-             * Gremlin Leader (9). */
+             * Gremlin Leader (9), then the act 3 background preview (10). */
             if (kDown & KEY_B) {
                 card_test_demo_fight(s_boss_demo);
-                s_boss_demo = s_boss_demo == 7 ? 8 : (s_boss_demo == 8 ? 9 : 7);
+                s_boss_demo = s_boss_demo == 7 ? 8 : (s_boss_demo == 8 ? 9 : (s_boss_demo == 9 ? 10 : 7));
             }
         }
         update_play_fx();

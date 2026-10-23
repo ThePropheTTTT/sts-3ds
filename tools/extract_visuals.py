@@ -47,10 +47,30 @@ PAGE = 1024
 CARD = (64, 88)
 ALPHA_FLOOR = 8  # ignore the soft drop shadow when measuring the card outline
 
-ACT_BACKGROUNDS = [
-    ("act1", "bottomScene/scene.png"),
-    ("act2", "cityScene/scene.png"),
-    ("act3", "beyondScene/scene.png"),
+# Combat-room backgrounds are not single images.  Each scene.atlas packs a
+# set of layers, and the game draws them at their atlas offsets in the order
+# listed in TheBottomScene / TheCityScene / TheBeyondScene.  Reading only
+# scene.png (the mod page) leaves out the floor on every act: act 1's floor is
+# part of the bg image on scene.jpg, while acts 2 and 3 keep it in mod/floor.
+# Compose the same stack here and crop it to the port's 400x240 top screen.
+SCENES = [
+    ("act1", "bottomScene/scene.atlas", "bottomScene", [
+        "bg", "mod/mg", "mod/midWall", "mod/mod1", "mod/mod2", "mod/ceiling",
+        "mod/ceilingMod1", "mod/ceilingMod2", "mod/ceilingMod3",
+        "mod/ceilingMod4", "mod/ceilingMod5", "mod/ceilingMod6", "mod/fg",
+    ]),
+    ("act2", "cityScene/scene.atlas", "cityScene", [
+        "mod/bg1", "mod/bg2", "mod/bg1Glow", "mod/bg2Glow", "mod/floor",
+        "mod/ceiling", "mod/wall", "mod/chains", "mod/mg1", "mod/mg2",
+        "mod/p1", "mod/p2", "mod/p3", "mod/p4", "mod/p5", "mod/throne",
+        "mod/fg",
+    ]),
+    ("act3", "beyondScene/scene.atlas", "beyondScene", [
+        "mod/floor", "mod/ceiling", "mod/bg1", "mod/bg2",
+        "mod/mod2", "mod/mod1", "mod/mod3", "mod/mod4",
+        "mod/c1", "mod/c2", "mod/c3", "mod/c4",
+        "mod/s1", "mod/s2", "mod/s3", "mod/s4", "mod/s5", "mod/fg",
+    ]),
 ]
 
 INTENTS = [
@@ -93,6 +113,26 @@ def visible_bbox(img, floor=ALPHA_FLOOR):
     return alpha.point(lambda a: 255 if a > floor else 0).getbbox()
 
 
+def compose_scene(z, atlas_path, root, layers, size=(1920, 1136)):
+    """Flatten the scene's atlas layers at their libGDX offsets.
+
+    Atlas offsets use a bottom-left origin; PIL uses top-left, hence
+    y = height - offset_y - layer_height.
+    """
+    _pages, regions = parse_atlas(z.read(atlas_path).decode("utf-8"))
+    cache = {}
+    canvas = Image.new("RGBA", size, (0, 0, 0, 255))
+    for name in layers:
+        region = regions[name]
+        page = cache.get(region.page)
+        if page is None:
+            page = Image.open(io.BytesIO(z.read(root + "/" + region.page))).convert("RGBA")
+            cache[region.page] = page
+        piece = page.crop((region.x, region.y, region.x + region.w, region.y + region.h))
+        canvas.alpha_composite(piece, (region.offset[0], size[1] - region.offset[1] - region.h))
+    return canvas
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--jar", default=DEFAULT_JAR)
@@ -119,15 +159,15 @@ def main(argv=None) -> int:
         return pos
 
     with zipfile.ZipFile(args.jar) as z:
-        # --- act backgrounds: one tall 2048 scene per act, squashed to 400 wide
-        for key, path in ACT_BACKGROUNDS:
-            im = Image.open(io.BytesIO(z.read(path))).convert("RGB")
+        # --- act backgrounds: replay the game's layer stack, then fit 400x240.
+        for key, atlas_path, root, layers in SCENES:
+            im = compose_scene(z, atlas_path, root, layers)
             scale = 400.0 / im.width
             im = im.resize((400, max(240, int(im.height * scale))), Image.LANCZOS)
             top = max(0, (im.height - 240) // 2)
             im = im.crop((0, top, 400, top + 240))
             im.save(os.path.join(args.out, key + ".png"))
-            print(f"{key}: {path} -> assets/{key}.png")
+            print(f"{key}: {atlas_path} ({len(layers)} layers) -> assets/{key}.png")
 
         # --- card layers, each flattened onto its own 1024 canvas
         pages, regions = parse_atlas(z.read("cardui/cardui.atlas").decode("utf-8"))

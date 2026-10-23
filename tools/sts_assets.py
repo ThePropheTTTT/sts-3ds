@@ -118,7 +118,7 @@ def parse_atlas(text):
             continue
         s = raw.strip()
         indented = raw[0] in " \t"
-        if not indented and s.endswith(".png"):
+        if not indented and s.lower().endswith((".png", ".jpg", ".jpeg")):
             page = s
             pages.append(s)
             cur = None
