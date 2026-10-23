@@ -2539,6 +2539,122 @@ static void test_batch15(void) {
     check("enlighten+ cost stays", battle_card_cost(0), 1);
 }
 
+static void test_batch16(void) {
+    int bash = battle_find_card("Bash");
+
+    /* A Purity that is the only card in hand has nothing to choose from and
+     * must not open an empty picker. */
+    fresh(200);
+    hand("Purity", 0);
+    battle_play(0, 0);
+    check("purity empty screen", g_run.screen, SCREEN_FIGHT);
+    check("purity empty exhaust", g_battle.exhaust_count, 1);
+    fresh(200);
+    hand("Forethought", 0);
+    battle_play(0, 0);
+    check("forethought empty screen", g_run.screen, SCREEN_FIGHT);
+    check("forethought empty hand", g_battle.hand_count, 0);
+
+    /* Purity: exhaust up to 3 cards from hand, then the card itself. */
+    fresh(200);
+    hand("Purity", 0);
+    hand_add("Strike_R");
+    hand_add("Defend_R");
+    hand_add("Bash");
+    battle_play(0, 0);
+    check("purity picker", battle_pick_mode(), PICK_EXHAUST_MANY);
+    check("purity pick count", battle_pick_count(), 3);
+    check("purity max", battle_pick_extra(), 3);
+    check("purity self exhaust", g_battle.exhaust_count, 1);
+    battle_pick_toggle(0);
+    battle_pick_toggle(1);
+    check("purity marked", battle_pick_marked_count(), 2);
+    battle_pick_confirm_multi();
+    check("purity leaves one", g_battle.hand_count, 1);
+    check("purity exhaust total", g_battle.exhaust_count, 3);
+
+    /* Purity+: the cap rises to 5. */
+    fresh(200);
+    hand("Purity", 1);
+    for (int i = 0; i < 6; i++) hand_add("Strike_R");
+    battle_play(0, 0);
+    check("purity+ pick count", battle_pick_count(), 6);
+    check("purity+ max", battle_pick_extra(), 5);
+    for (int i = 0; i < 6; i++) battle_pick_toggle(i);
+    check("purity+ capped", battle_pick_marked_count(), 5);
+    battle_pick_confirm_multi();
+    check("purity+ hand left", g_battle.hand_count, 1);
+    check("purity+ exhaust total", g_battle.exhaust_count, 6);
+
+    /* Cancelling Purity skips the exhaust, but Purity is already spent. */
+    fresh(200);
+    hand("Purity", 0);
+    hand_add("Strike_R");
+    hand_add("Defend_R");
+    battle_play(0, 0);
+    battle_pick_cancel();
+    check("purity cancel hand", g_battle.hand_count, 2);
+    check("purity cancel exhaust", g_battle.exhaust_count, 1);
+
+    /* Forethought: one card goes to the bottom of the draw pile and costs 0
+     * until it is played. */
+    fresh(200);
+    hand("Forethought", 0);
+    hand_add("Bash");
+    battle_play(0, 0);
+    check("forethought picker", battle_pick_mode(), PICK_BOTTOM_HAND);
+    check("forethought pick count", battle_pick_count(), 1);
+    battle_pick_choose(0);
+    check("forethought hand", g_battle.hand_count, 0);
+    check("forethought draw", g_battle.draw_count, 1);
+    check("forethought bottom", CARD_INDEX(g_battle.draw[0]), bash);
+    check("forethought zero once", g_battle.zero_once[bash], 1);
+    g_battle.hand[0] = g_battle.draw[--g_battle.draw_count];
+    g_battle.hand_count = 1;
+    check("forethought cost", battle_card_cost(0), 0);
+    battle_play(0, 0);
+    check("forethought cleared", g_battle.zero_once[bash], 0);
+    check("forethought played", 200 - g_battle.enemies[0].hp, 8);
+
+    /* Double Tap: the next Attack is played twice, then the power is spent. */
+    fresh(200);
+    hand("Double Tap", 0);
+    hand_add("Strike_R");
+    battle_play(0, 0);
+    check("double tap power", battle_power(POW_DOUBLE_TAP), 1);
+    battle_play(0, 0);
+    check("double tap strike", 200 - g_battle.enemies[0].hp, 12);
+    check("double tap spent", battle_power(POW_DOUBLE_TAP), 0);
+    hand("Strike_R", 0);
+    battle_play(0, 0);
+    check("double tap next only", 200 - g_battle.enemies[0].hp, 18);
+
+    /* Double Tap+ holds two charges; the third Attack is normal again. */
+    fresh(200);
+    g_battle.energy = 10;
+    hand("Double Tap", 1);
+    hand_add("Strike_R");
+    hand_add("Strike_R");
+    hand_add("Strike_R");
+    battle_play(0, 0);
+    check("double tap+ charges", battle_power(POW_DOUBLE_TAP), 2);
+    battle_play(0, 0);
+    battle_play(0, 0);
+    battle_play(0, 0);
+    check("double tap+ third normal", 200 - g_battle.enemies[0].hp, 30);
+
+    /* An Attack with a debuff applies that debuff on both plays. */
+    fresh(200);
+    hand("Double Tap", 0);
+    hand_add("Bash");
+    battle_play(0, 0);
+    battle_play(0, 0);
+    /* The first Bash applies Vulnerable before the replayed second Bash, so
+     * the second hit is 8 * 1.5 = 12 and the total is 20. */
+    check("double tap bash dmg", 200 - g_battle.enemies[0].hp, 20);
+    check("double tap bash vuln", g_battle.enemies[0].vulnerable, 4);
+}
+
 /* ---- picker preview ---------------------------------------------------- */
 
 /* The card-choice screen only appears mid-combat when one of seven cards is
@@ -2626,6 +2742,36 @@ void card_test_demo_fight(int which) {
         card_test_demo_pick(which == 16 ? 3 : 4);
         return;
     }
+    if (which == 19 || which == 20) {
+        /* The two new pickers.  19 is Purity (multi-select, Y confirms),
+         * 20 is Forethought (a single card to the bottom of the draw pile). */
+        memset(&g_battle, 0, sizeof(g_battle));
+        memset(&g_run, 0, sizeof(g_run));
+        g_battle.hp = 80;
+        g_battle.max_hp = 80;
+        g_battle.energy = 3;
+        g_battle.max_energy = 3;
+        g_battle.phase = PHASE_PLAYER;
+        g_battle.pending_split = -1;
+        g_run.act = 1;
+        g_map.gold = 99;
+        static const char *const PICK_CARDS[] = {
+            "Strike_R", "Defend_R", "Bash", "Pommel Strike", "Cleave",
+        };
+        for (int i = 0; i < 5; i++) {
+            int idx = battle_find_card(PICK_CARDS[i]);
+            g_battle.hand[i] = CARD_ENTRY(idx, 0);
+            g_battle.pick_source[i] = i;
+        }
+        g_battle.hand_count = 5;
+        g_battle.pick_count = 5;
+        g_battle.pick_sel = 0;
+        g_battle.pick_mode = which == 19 ? PICK_EXHAUST_MANY : PICK_BOTTOM_HAND;
+        g_battle.pick_extra = which == 19 ? 3 : 0;
+        if (which == 19) g_battle.pick_marked[0] = 1;
+        g_run.screen = SCREEN_PICK;
+        return;
+    }
     /* 0 Champ, 1 Book of Stabbing, 2 Byrds, 3 Chosen, 4 Parasite,
      * 5 Spheric Guardian, 6 the three Slavers, 7 BronzeAutomaton with its
      * two summoned orbs, 8 the Collector with its Torch Heads, 9 the Gremlin
@@ -2634,9 +2780,10 @@ void card_test_demo_fight(int which) {
      * Boss, 12 Gremlin Nob, 13 two Acid Slimes (M), 14 Jaw Worm, 15 the
      * Slime Boss' two split slimes, 16/17 the two draw-pile pickers, 18 the
      * last four powers (Panacea/Ghostly/Dark Shackles/Enlightenment) on a pair
-     * of Acid Slimes.  Same spawn path the real encounter uses, then a hand so
-     * the bottom screen has cards to draw. */
-    if (which < 0 || which > 18) which = 0;
+     * of Acid Slimes, 19 Purity's multi-select, 20 Forethought's bottom-pick.
+     * Same spawn path the real encounter uses, then a hand so the bottom
+     * screen has cards to draw. */
+    if (which < 0 || which > 20) which = 0;
     if (which == 10) battle_test_spawn_act2(1);
     else if (which == 11) battle_test_spawn_act1(0);
     else if (which == 12) battle_test_spawn_act1(1);
@@ -2805,6 +2952,7 @@ void card_test_run(void) {
     test_batch13();
     test_batch14();
     test_batch15();
+    test_batch16();
     g_run.screen = SCREEN_MAP;
 }
 

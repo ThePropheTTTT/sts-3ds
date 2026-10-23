@@ -137,7 +137,7 @@ static const char *EXHAUSTS[] = {
     "Dramatic Entrance", "RitualDagger", "PanicButton",
     "Burning Pact", "Warcry", "Discovery", "Thinking Ahead",
     "Apotheosis", "Madness", "Chrysalis", "Metamorphosis", "Infernal Blade",
-    "Transmutation", "Violence", "Panacea", "Ghostly", "Dark Shackles",
+    "Transmutation", "Violence", "Panacea", "Ghostly", "Dark Shackles", "Purity",
 };
 
 static int card_exhausts(const CardDef *c, int up) {
@@ -166,6 +166,9 @@ int battle_cost_of(const CardDef *c) {
     {
         int index = (int)(c - sts_cards);
         if (index >= 0 && index < 160 && g_battle.zero_cost[index]) return 0;
+        /* ForethoughtAction: the card costs 0 until it is played, across
+         * turns if it stays in the draw pile. */
+        if (index >= 0 && index < 160 && g_battle.zero_once[index]) return 0;
         /* setCostForTurn(0): free for the current turn only (Infernal Blade,
          * Transmutation).  The turn array is cleared in start_player_turn. */
         if (index >= 0 && index < 160 && g_battle.zero_turn[index]) return 0;
@@ -1936,6 +1939,7 @@ static void pick_clear(void) {
     g_battle.pick_sel = 0;
     g_battle.pick_count = 0;
     memset(g_battle.pick_source, 0, sizeof(g_battle.pick_source));
+    memset(g_battle.pick_marked, 0, sizeof(g_battle.pick_marked));
 }
 
 static void pick_push(int value) {
@@ -1955,7 +1959,8 @@ static int open_pick(int mode, int extra) {
     pick_clear();
     g_battle.pick_mode = mode;
     g_battle.pick_extra = extra;
-    if (mode == PICK_UPGRADE_HAND || mode == PICK_EXHAUST_HAND || mode == PICK_TOP_HAND) {
+    if (mode == PICK_UPGRADE_HAND || mode == PICK_EXHAUST_HAND ||
+        mode == PICK_EXHAUST_MANY || mode == PICK_TOP_HAND || mode == PICK_BOTTOM_HAND) {
         for (int i = 0; i < g_battle.hand_count; i++) {
             if (mode == PICK_UPGRADE_HAND && CARD_UPGRADED(g_battle.hand[i])) continue;
             pick_push(i);
@@ -2003,7 +2008,9 @@ int battle_pick_card(int index) {
     switch (g_battle.pick_mode) {
     case PICK_UPGRADE_HAND:
     case PICK_EXHAUST_HAND:
+    case PICK_EXHAUST_MANY:
     case PICK_TOP_HAND:
+    case PICK_BOTTOM_HAND:
     case PICK_COPY_HAND:
         return CARD_INDEX(g_battle.hand[source]);
     case PICK_EXHUME:
@@ -2019,7 +2026,8 @@ int battle_pick_card(int index) {
 int battle_pick_up(int index) {
     if (index < 0 || index >= g_battle.pick_count) return 0;
     if (g_battle.pick_mode == PICK_UPGRADE_HAND || g_battle.pick_mode == PICK_EXHAUST_HAND ||
-        g_battle.pick_mode == PICK_TOP_HAND || g_battle.pick_mode == PICK_COPY_HAND) {
+        g_battle.pick_mode == PICK_EXHAUST_MANY || g_battle.pick_mode == PICK_TOP_HAND ||
+        g_battle.pick_mode == PICK_BOTTOM_HAND || g_battle.pick_mode == PICK_COPY_HAND) {
         return CARD_UPGRADED(g_battle.hand[g_battle.pick_source[index]]);
     }
     if (g_battle.pick_mode == PICK_EXHUME) {
@@ -2070,6 +2078,19 @@ int battle_pick_choose(int index) {
         if (g_battle.draw_count < 64) g_battle.draw[g_battle.draw_count++] = entry;
         break;
     }
+    case PICK_BOTTOM_HAND: {
+        /* ForethoughtAction: bottom of the draw pile, and setCostUntilPlayed(0). */
+        int entry = g_battle.hand[source];
+        hand_remove(source);
+        if (g_battle.draw_count < 64) {
+            memmove(&g_battle.draw[1], &g_battle.draw[0],
+                    sizeof(int) * (size_t)g_battle.draw_count);
+            g_battle.draw[0] = entry;
+            g_battle.draw_count++;
+        }
+        g_battle.zero_once[CARD_INDEX(entry)] = 1;
+        break;
+    }
     case PICK_COPY_HAND: {
         int entry = g_battle.hand[source];
         for (int i = 0; i < g_battle.pick_extra && g_battle.hand_count < 10; i++) {
@@ -2118,6 +2139,57 @@ void battle_pick_cancel(void) {
     if (g_run.screen != SCREEN_PICK) return;
     pick_clear();
     g_run.screen = SCREEN_FIGHT;
+}
+
+int battle_pick_extra(void) { return g_battle.pick_extra; }
+int battle_pick_multi(void) { return g_battle.pick_mode == PICK_EXHAUST_MANY; }
+
+int battle_pick_marked(int index) {
+    if (index < 0 || index >= g_battle.pick_count) return 0;
+    return g_battle.pick_marked[index] != 0;
+}
+
+int battle_pick_marked_count(void) {
+    int n = 0;
+    for (int i = 0; i < g_battle.pick_count; i++) {
+        if (g_battle.pick_marked[i]) n++;
+    }
+    return n;
+}
+
+/* Purity: A ticks cards instead of confirming, so the count is capped here. */
+void battle_pick_toggle(int index) {
+    if (g_battle.pick_mode != PICK_EXHAUST_MANY) return;
+    if (index < 0 || index >= g_battle.pick_count) return;
+    if (g_battle.pick_marked[index]) {
+        g_battle.pick_marked[index] = 0;
+        return;
+    }
+    if (battle_pick_marked_count() >= g_battle.pick_extra) return;
+    g_battle.pick_marked[index] = 1;
+}
+
+/* Confirms a Purity selection.  Exhausting is done from the end of the hand
+ * so the remaining slots keep their order. */
+int battle_pick_confirm_multi(void) {
+    if (g_run.screen != SCREEN_PICK || g_battle.pick_mode != PICK_EXHAUST_MANY) return 0;
+    int ticked[10];
+    memset(ticked, 0, sizeof(ticked));
+    for (int i = 0; i < g_battle.pick_count; i++) {
+        int source = g_battle.pick_source[i];
+        if (g_battle.pick_marked[i] && source >= 0 && source < 10) ticked[source] = 1;
+    }
+    int kept[10];
+    int kept_count = 0;
+    for (int i = 0; i < g_battle.hand_count; i++) {
+        if (ticked[i]) exhaust_card(g_battle.hand[i]);
+        else kept[kept_count++] = g_battle.hand[i];
+    }
+    memcpy(g_battle.hand, kept, sizeof(int) * (size_t)kept_count);
+    g_battle.hand_count = kept_count;
+    pick_clear();
+    g_run.screen = SCREEN_FIGHT;
+    return 1;
 }
 
 /* ApotheosisAction.canUpgrade: Statuses and Curses stay as they are, and a
@@ -2246,6 +2318,18 @@ int battle_play(int slot, int target) {
             }
         }
     }
+
+    /* DoubleTapPower: the next Attack is queued a second time and pays no
+     * energy.  The whole use() effect is replayed before the card leaves the
+     * hand; this mirrors the game's CardQueueItem replay. */
+    int double_tap = 0;
+    if (c->type == 0 && pw(POW_DOUBLE_TAP) > 0) {
+        g_battle.powers[POW_DOUBLE_TAP]--;
+        double_tap = 1;
+    }
+    int attack_passes = double_tap ? 2 : 1;
+    for (int attack_pass = 0; attack_pass < attack_passes; attack_pass++) {
+        if (attack_pass > 0 && alive_count() == 0) break;
 
     int damage = card_damage(c, up);
     /* MindBlast.applyPowers(): damage is the draw pile size.  RitualDagger's
@@ -2575,8 +2659,14 @@ int battle_play(int slot, int target) {
     }
     if (strcmp(c->id, "Rupture") == 0) add_pw(POW_RUPTURE, magic);
     if (strcmp(c->id, "Sadistic Nature") == 0) add_pw(POW_SADISTIC, magic);
+    if (strcmp(c->id, "Double Tap") == 0) add_pw(POW_DOUBLE_TAP, magic);
+    }  /* attack_pass: Double Tap plays the same Attack twice */
 
     int entry = g_battle.hand[slot];
+    /* Forethought's discount lasts until the card is actually played. */
+    if (g_battle.zero_once[CARD_INDEX(entry)]) {
+        g_battle.zero_once[CARD_INDEX(entry)] = 0;
+    }
     for (int i = slot; i < g_battle.hand_count - 1; i++) g_battle.hand[i] = g_battle.hand[i + 1];
     g_battle.hand_count--;
 
@@ -2594,7 +2684,11 @@ int battle_play(int slot, int target) {
 
     /* Cards that make the player pick from a pile open the picker after the
      * played card has already left the hand (so it cannot pick itself). */
-    if (strcmp(c->id, "Armaments") == 0) {
+    if (strcmp(c->id, "Purity") == 0) {
+        open_pick(PICK_EXHAUST_MANY, magic);
+    } else if (strcmp(c->id, "Forethought") == 0) {
+        open_pick(PICK_BOTTOM_HAND, 0);
+    } else if (strcmp(c->id, "Armaments") == 0) {
         if (up) {
             for (int i = 0; i < g_battle.hand_count; i++) {
                 g_battle.hand[i] = CARD_ENTRY(CARD_INDEX(g_battle.hand[i]), 1);
@@ -2735,6 +2829,8 @@ int battle_play(int slot, int target) {
 static int end_turn_powers(void) {
     /* RagePower.atEndOfTurn: the block-per-attack expires with the turn. */
     g_battle.rage_block = 0;
+    /* DoubleTapPower.atEndOfRound: "this turn" ends here. */
+    g_battle.powers[POW_DOUBLE_TAP] = 0;
     if (g_battle.temp_strength > 0) {
         g_battle.strength -= g_battle.temp_strength;
         g_battle.temp_strength = 0;

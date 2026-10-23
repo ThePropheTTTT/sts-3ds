@@ -132,7 +132,8 @@ typedef struct {
 #define POW_PANACHE 14
 #define POW_RUPTURE 15
 #define POW_SADISTIC 16
-#define POW_COUNT 17
+#define POW_DOUBLE_TAP 17
+#define POW_COUNT 18
 
 /* Which pile a card effect is asking the player to choose from. */
 #define PICK_NONE 0
@@ -144,6 +145,8 @@ typedef struct {
 #define PICK_DISCOVERY 6       /* Discovery: one of three random cards */
 #define PICK_DRAW_SKILL 7      /* Secret Technique: take a Skill from the draw pile */
 #define PICK_DRAW_ATTACK 8     /* Secret Weapon: take an Attack from the draw pile */
+#define PICK_EXHAUST_MANY 9    /* Purity: exhaust up to pick_extra cards from hand */
+#define PICK_BOTTOM_HAND 10    /* Forethought: put a card at the bottom of the draw pile */
 
 typedef struct {
     int hp;
@@ -184,6 +187,7 @@ typedef struct {
     int necro_pending;   /* Necronomicurse copies waiting for the hand */
     unsigned char zero_cost[160];   /* card indexes that cost 0 this combat */
     unsigned char zero_turn[160];   /* card indexes that cost 0 this turn */
+    unsigned char zero_once[160];   /* Forethought: cost 0 until the card is played */
     unsigned char cost_one_turn[160];   /* Enlightenment: cost 1 this turn */
     unsigned char cost_one_combat[160]; /* Enlightenment+: cost 1 for the combat */
     int force_exhaust;              /* the next card played is exhausted (Havoc) */
@@ -192,6 +196,7 @@ typedef struct {
     int pick_sel;
     int pick_count;
     int pick_source[64]; /* hand slots, exhaust indexes or card indexes */
+    unsigned char pick_marked[64]; /* Purity: cards ticked for multi-exhaust */
 
     int turn;
     int phase;
@@ -248,6 +253,12 @@ int battle_pick_sel(void);
 void battle_pick_move(int delta);
 int battle_pick_choose(int index);
 void battle_pick_cancel(void);
+int battle_pick_extra(void);
+int battle_pick_multi(void);
+int battle_pick_marked(int index);
+int battle_pick_marked_count(void);
+void battle_pick_toggle(int index);
+int battle_pick_confirm_multi(void);
 int battle_play(int slot, int target);
 void battle_end_turn(void);
 

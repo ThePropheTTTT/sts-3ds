@@ -1843,6 +1843,8 @@ static int status_collect(StatusRow *rows, int max) {
                    "卡牌格挡 -25%", debuff);
     n = status_add(rows, n, max, "力量", g_battle.strength,
                    "攻击伤害提升", buff);
+    n = status_add(rows, n, max, "双发", battle_power(POW_DOUBLE_TAP),
+                   "下一张攻击牌打出两次", buff);
     n = status_add(rows, n, max, "金属化", battle_power(POW_METALLICIZE),
                    "回合结束获得格挡", buff);
     n = status_add(rows, n, max, "壁垒", battle_power(POW_BARRICADE),
@@ -2515,6 +2517,12 @@ static const char *pick_title(int mode) {
     case PICK_DISCOVERY:    return "发现：选择一张牌加入手牌";
     case PICK_DRAW_SKILL:   return "从抽牌堆选择一张技能牌";
     case PICK_DRAW_ATTACK:  return "从抽牌堆选择一张攻击牌";
+    case PICK_BOTTOM_HAND:  return "选择一张牌放到抽牌堆底";
+    case PICK_EXHAUST_MANY: {
+        static char buf[48];
+        snprintf(buf, sizeof(buf), "消耗最多 %d 张牌", battle_pick_extra());
+        return buf;
+    }
     default:                return "选择一张牌";
     }
 }
@@ -2552,6 +2560,9 @@ static void draw_pick_top(void) {
         float x, y, w, h;
         pick_card_box(i - first, mode, &x, &y, &w, &h);
         draw_card(battle_pick_card(i), battle_pick_up(i), x, y, w, h, i == s_pick_sel);
+        if (battle_pick_multi() && battle_pick_marked(i)) {
+            rect_fill(x + w - 14.0f, y + 2.0f, 12.0f, 12.0f, RGB(110, 180, 110), 0.35f);
+        }
     }
 }
 
@@ -2562,7 +2573,7 @@ static void draw_pick_bottom(void) {
     int up = battle_pick_up(sel);
     const struct CardDef *c = &sts_cards[battle_pick_card(sel)];
     int per = mode == PICK_DISCOVERY ? 3 : PICK_PER_PAGE;
-    char buf[64];
+    char buf[96];
 
     text_draw(FS_MID, pick_title(mode), 8, 2, COL_GOLD);
     snprintf(buf, sizeof(buf), "%s%s", c->name, up ? "+" : "");
@@ -2571,7 +2582,15 @@ static void draw_pick_bottom(void) {
     text_draw(FS_SMALL, buf, 8, 50, COL_DIM);
     text_draw_wrapped(FS_SMALL, up ? c->text_up : c->text, 8, 70, 304, 7,
                       RGB(228, 218, 198));
-    if (count > per) {
+    if (battle_pick_multi()) {
+        if (count > per) {
+            snprintf(buf, sizeof(buf), "已选 %d/%d  L/R 翻页  A 选择  Y 确认  B 取消",
+                     battle_pick_marked_count(), battle_pick_extra());
+        } else {
+            snprintf(buf, sizeof(buf), "已选 %d/%d  A 选择  Y 确认  B 取消",
+                     battle_pick_marked_count(), battle_pick_extra());
+        }
+    } else if (count > per) {
         snprintf(buf, sizeof(buf), "%d/%d  ←→↑↓ 选择  L/R 翻页  A 确认  B 取消",
                  sel + 1, count);
     } else {
@@ -3233,7 +3252,12 @@ static void handle_buttons(u32 kDown) {
             if ((page + 1) * per < count) s_pick_sel = (page + 1) * per;
         }
         if (kDown & KEY_B) battle_pick_cancel();
-        if (kDown & KEY_A) battle_pick_choose(s_pick_sel);
+        if (battle_pick_multi()) {
+            if (kDown & KEY_A) battle_pick_toggle(s_pick_sel);
+            if (kDown & KEY_Y) battle_pick_confirm_multi();
+        } else if (kDown & KEY_A) {
+            battle_pick_choose(s_pick_sel);
+        }
         break;
     }
 
@@ -3303,14 +3327,16 @@ int main(int argc, char **argv) {
             /* B cycles the set pieces: Automaton (7), Collector (8), Gremlin
              * Leader (9), act 3 background (10), then Slime Boss (11), Nob
              * (12), Acid Slimes (13), Jaw Worm (14), the split slimes (15),
-             * then the last four powers on Acid Slimes (18).  The two draw-pile
-             * pickers (16, 17) are skipped here: they end on SCREEN_PICK, where
-             * B only cancels the picker, so B cannot cycle past them. */
+             * then the last four powers on Acid Slimes (18), Purity's
+             * multi-select (19) and Forethought's bottom-pick (20).  The two
+             * draw-pile pickers (16, 17) are skipped here: they end on
+             * SCREEN_PICK, where B only cancels the picker, so B cannot cycle
+             * past them. */
             if (kDown & KEY_B) {
                 card_test_demo_fight(s_boss_demo);
                 s_boss_demo++;
                 if (s_boss_demo == 16 || s_boss_demo == 17) s_boss_demo = 18;
-                if (s_boss_demo > 18) s_boss_demo = 7;
+                if (s_boss_demo > 20) s_boss_demo = 7;
             }
         }
         update_play_fx();
