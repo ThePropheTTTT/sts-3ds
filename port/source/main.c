@@ -149,7 +149,7 @@ static int s_event_sel;
 static int s_detail;
 static int s_pick_sel;
 #if defined(CARD_TEST)
-static int s_boss_demo = 7;   /* CARD_TEST report: B cycles Automaton/Collector/Leader */
+static int s_boss_demo = 7;   /* CARD_TEST report: B cycles the act 1/2 set pieces */
 #endif
 static int s_panel_tab;
 static int s_panel_scroll;
@@ -2149,18 +2149,32 @@ static void draw_fight_top(void) {
             break;
         }
         case MOVE_SLIME:
-            snprintf(intent, sizeof(intent), value > 0 ? "攻击 %d 黏液" : "黏液",
-                     battle_enemy_intent_damage(i));
+            if (value > 0) {
+                snprintf(intent, sizeof(intent), "攻击 %d 黏液 %d",
+                         battle_enemy_intent_damage(i), value2 > 0 ? value2 : 1);
+            } else {
+                snprintf(intent, sizeof(intent), "黏液 %d", value2 > 0 ? value2 : 1);
+            }
             intent_color = RGB(150, 200, 150);
+            break;
+        case MOVE_PREP:
+            /* Slime Boss' Prep has no effect and shows the UNKNOWN intent. */
+            snprintf(intent, sizeof(intent), "未知");
+            intent_color = RGB(190, 190, 190);
+            break;
+        case MOVE_FRAIL:
+            snprintf(intent, sizeof(intent), "脆弱 %d", value);
+            intent_color = RGB(200, 150, 240);
             break;
         default:
             intent[0] = 0;
             break;
         }
-        if (s_vis_tex) {
+        if (s_vis_tex && kind != MOVE_PREP) {
             int icon = 0;
             if (kind == MOVE_ATTACK || kind == MOVE_ATTACK_BLOCK || kind == MOVE_MULTI ||
-                kind == MOVE_ATTACK_DEBUFF || kind == MOVE_SLIME || kind == MOVE_ATTACK_WEAK ||
+                kind == MOVE_ATTACK_DEBUFF || (kind == MOVE_SLIME && value > 0) ||
+                kind == MOVE_ATTACK_WEAK ||
                 kind == MOVE_WOUND || kind == MOVE_BLOCK_ATTACK || kind == MOVE_HEADBUTT ||
                 kind == MOVE_SUCK) {
                 int dmg = battle_enemy_intent_damage(i);
@@ -3270,11 +3284,13 @@ int main(int argc, char **argv) {
             if (kDown & KEY_LEFT) card_test_demo_fight(4);
             if (kDown & KEY_RIGHT) card_test_demo_fight(5);
             if (kDown & KEY_A) card_test_demo_fight(6);   /* three Slavers */
-            /* B cycles the act 2 set pieces: Automaton (7), Collector (8),
-             * Gremlin Leader (9), then the act 3 background preview (10). */
+            /* B cycles the set pieces: Automaton (7), Collector (8), Gremlin
+             * Leader (9), act 3 background (10), then Slime Boss (11), Nob
+             * (12), Acid Slimes (13), Jaw Worm (14) and the split slimes (15). */
             if (kDown & KEY_B) {
                 card_test_demo_fight(s_boss_demo);
-                s_boss_demo = s_boss_demo == 7 ? 8 : (s_boss_demo == 8 ? 9 : (s_boss_demo == 9 ? 10 : 7));
+                s_boss_demo++;
+                if (s_boss_demo > 15) s_boss_demo = 7;
             }
         }
         update_play_fx();

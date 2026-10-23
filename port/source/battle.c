@@ -291,7 +291,7 @@ static void add_enemy(int slot, const char *name, int hp) {
 /* Vanilla Act 1 move sets (numbers from the game's own data). */
 static const EnemyMove SLIME_MOVES[] = {
     {MOVE_ATTACK, 10, 0, 0},   /* Tackle */
-    {MOVE_SLIME, 7, 0, 0},     /* Corrosive Spit: 7 damage + a 黏液 */
+    {MOVE_SLIME, 7, 1, 0},     /* Corrosive Spit: 7 damage + a 黏液 */
     {MOVE_WEAK, 1, 0, 0},      /* Lick */
 };
 static const EnemyMove JAW_WORM_MOVES[] = {
@@ -300,18 +300,18 @@ static const EnemyMove JAW_WORM_MOVES[] = {
     {MOVE_BUFF, 3, 6, 0},          /* Bellow: +3 Strength, 6 Block */
 };
 static const EnemyMove NOB_MOVES[] = {
-    {MOVE_ATTACK, 14, 0, 0},       /* Rush */
-    {MOVE_VULN, 2, 0, 0},          /* Skull Bash (damage omitted for now) */
-    {MOVE_BUFF, 2, 0, 0},          /* Bellow */
+    {MOVE_ATTACK, 14, 0, 0},          /* Rush */
+    {MOVE_ATTACK_DEBUFF, 6, 2, 0},    /* Skull Bash: 6 + 2 Vulnerable */
+    {MOVE_BUFF, 2, 0, 0},             /* Bellow */
 };
 static const EnemyMove SPIKE_L_MOVES[] = {
-    {MOVE_ATTACK, 16, 0, 0},       /* Tackle */
-    {MOVE_SLIME, 16, 0, 0},        /* Flame Tackle: 16 damage + 2 黏液 */
+    {MOVE_SLIME, 16, 2, 0},        /* Flame Tackle: 16 damage + 2 黏液 */
+    {MOVE_FRAIL, 2, 0, 0},         /* Frail Lick: 2 Frail */
 };
 static const EnemyMove ACID_L_MOVES[] = {
-    {MOVE_ATTACK, 16, 0, 0},       /* Tackle */
-    {MOVE_SLIME, 11, 0, 0},        /* Corrosive Spit */
-    {MOVE_WEAK, 2, 0, 0},          /* Lick */
+    {MOVE_SLIME, 11, 2, 0},        /* Wound Tackle: 11 damage + 2 黏液 */
+    {MOVE_ATTACK, 16, 0, 0},       /* Normal Tackle */
+    {MOVE_WEAK, 2, 0, 0},          /* Lick: 2 Weak */
 };
 /* Act 2 normal monsters.  The move ids are the game's own ids shifted to
  * table indexes; the comments name the vanilla id. */
@@ -431,8 +431,8 @@ static const EnemyMove GREMLIN_LEADER_MOVES[] = {
 };
 static const EnemyMove BOSS_MOVES[] = {
     {MOVE_ATTACK, 35, 0, 0},       /* Slam */
-    {MOVE_SLIME, 0, 0, 0},         /* Goop Spray */
-    {MOVE_ATTACK, 10, 0, 0},
+    {MOVE_PREP, 0, 0, 0},          /* Prep: UNKNOWN intent, no effect */
+    {MOVE_SLIME, 0, 3, 0},         /* Goop Spray: 3 黏液, no damage */
 };
 
 
@@ -674,23 +674,56 @@ static void choose_move_roll(Enemy *e, unsigned int roll) {
     }
 
     if (e->moves == NOB_MOVES) {
-        /* 0 Rush, 1 Skull Bash, 2 Bellow; Bellow always happens first */
+        /* 0 Rush, 1 Skull Bash, 2 Bellow.  Bellow is always the opening move;
+         * after that Skull Bash has a 33% chance, and two Rushes in a row
+         * force it (GremlinNob.java:96-113). */
         if (!e->used_bellow) {
             e->used_bellow = 1;
             e->move_index = 2;
             return;
         }
-        e->move_index = last_two(e, 0) ? 1 : 0;
+        e->move_index = (roll < 33 || last_two(e, 0)) ? 1 : 0;
         return;
     }
 
-    /* Slime Boss: opens with Goop Spray, then Slam / tackle pattern. */
+    /* Slime Boss.  getMove() only rolls the opening Sticky; takeTurn() then
+     * sets the next move by hand: Sticky -> Prep -> Slam -> Sticky
+     * (SlimeBoss.java:109-180). */
     if (e->moves == BOSS_MOVES) {
         if (e->first_turn) {
-            e->move_index = 1;
+            e->move_index = 2;             /* Sticky */
             return;
         }
-        e->move_index = (unsigned char)(e->last_move == 0 ? 2 : 0);
+        if (e->last_move == 2) e->move_index = 1;       /* Prep */
+        else if (e->last_move == 1) e->move_index = 0;  /* Slam */
+        else e->move_index = 2;                         /* Sticky */
+        return;
+    }
+
+    /* Spike Slime (L): 0 Flame Tackle (16 + 2 黏液), 1 Frail Lick.
+     * It never picks Split from getMove; the half-HP interrupt owns that. */
+    if (e->moves == SPIKE_L_MOVES) {
+        if (roll < 30) {
+            e->move_index = last_two(e, 0) ? 1 : 0;
+        } else {
+            e->move_index = last_two(e, 1) ? 0 : 1;
+        }
+        return;
+    }
+
+    /* Acid Slime (L): 0 Wound Tackle (11 + 2 黏液), 1 Normal Tackle, 2 Lick.
+     * Same shape as the medium Acid Slime, with Normal Tackle at index 1. */
+    if (e->moves == ACID_L_MOVES) {
+        if (roll < 30) {
+            if (last_two(e, 0)) e->move_index = (rnd() & 1) ? 1 : 2;
+            else e->move_index = 0;
+        } else if (roll < 70) {
+            if (e->last_move == 1) e->move_index = (rnd() % 100) < 40 ? 0 : 2;
+            else e->move_index = 1;
+        } else {
+            if (last_two(e, 2)) e->move_index = (rnd() % 100) < 40 ? 0 : 1;
+            else e->move_index = 2;
+        }
         return;
     }
 
@@ -1277,32 +1310,47 @@ static void setup_encounter(int kind) {
 
     if (kind == NODE_BOSS) {
         add_enemy(0, "史莱姆老大", 140);
-        g_battle.enemies[0].moves = BOSS_MOVES;
-        g_battle.enemies[0].move_count = 3;
+        Enemy *boss = &g_battle.enemies[0];
+        boss->moves = BOSS_MOVES;
+        boss->move_count = 3;
+        boss->last_move = 255;
+        boss->last_before = 255;
         g_battle.enemy_count = 1;
+        choose_move(boss);
         return;
     }
     if (kind == NODE_ELITE) {
         add_enemy(0, "地精大块头", 82);
-        g_battle.enemies[0].moves = NOB_MOVES;
-        g_battle.enemies[0].move_count = 3;
+        Enemy *nob = &g_battle.enemies[0];
+        nob->moves = NOB_MOVES;
+        nob->move_count = 3;
+        nob->last_move = 255;
+        nob->last_before = 255;
         g_battle.enemy_count = 1;
+        choose_move(nob);
         return;
     }
     if (depth <= 2 || depth > 7) {
         add_enemy(0, "酸液史莱姆", 28 + (int)(battle_rand() % 5));
         add_enemy(1, "酸液史莱姆", 28 + (int)(battle_rand() % 5));
         for (int i = 0; i < 2; i++) {
-            g_battle.enemies[i].moves = SLIME_MOVES;
-            g_battle.enemies[i].move_count = 3;
-            g_battle.enemies[i].move_index = 0;
+            Enemy *e = &g_battle.enemies[i];
+            e->moves = SLIME_MOVES;
+            e->move_count = 3;
+            e->last_move = 255;
+            e->last_before = 255;
+            choose_move(e);
         }
         g_battle.enemy_count = 2;
     } else {
         add_enemy(0, "颚虫", 40 + (int)(battle_rand() % 5));
-        g_battle.enemies[0].moves = JAW_WORM_MOVES;
-        g_battle.enemies[0].move_count = 3;
+        Enemy *e = &g_battle.enemies[0];
+        e->moves = JAW_WORM_MOVES;
+        e->move_count = 3;
+        e->last_move = 255;
+        e->last_before = 255;
         g_battle.enemy_count = 1;
+        choose_move(e);
     }
 }
 
@@ -1613,11 +1661,19 @@ static void resolve_pending_split(void) {
     int hp_now = boss->hp;
     add_enemy(0, "尖刺史莱姆", hp_now);
     add_enemy(1, "酸液史莱姆", hp_now);
-    g_battle.enemies[0].moves = SPIKE_L_MOVES;
-    g_battle.enemies[0].move_count = 2;
-    g_battle.enemies[1].moves = ACID_L_MOVES;
-    g_battle.enemies[1].move_count = 3;
+    Enemy *spike = &g_battle.enemies[0];
+    Enemy *acid = &g_battle.enemies[1];
+    spike->moves = SPIKE_L_MOVES;
+    spike->move_count = 2;
+    spike->last_move = 255;
+    spike->last_before = 255;
+    acid->moves = ACID_L_MOVES;
+    acid->move_count = 3;
+    acid->last_move = 255;
+    acid->last_before = 255;
     g_battle.enemy_count = 2;
+    choose_move(spike);
+    choose_move(acid);
 }
 
 /* MagnetismPower.atStartOfTurn: MakeTempCardInHandAction with a random
@@ -2725,13 +2781,24 @@ static void enemy_take_turn(int i) {
             break;
         }
         case MOVE_SLIME: {
-            enemy_hit(e, i, battle_enemy_intent_damage(i));
+            /* Goop Spray has no damage: only attack when the move carries one.
+             * value2 is the number of Slimed cards (Slime Boss 3, L slimes 2,
+             * the medium Acid Slime 1). */
+            if (move->value > 0) enemy_hit(e, i, battle_enemy_intent_damage(i));
+            int n = move->value2 > 0 ? move->value2 : 1;
             int slimed = battle_find_card("Slimed");
-            if (slimed >= 0 && g_battle.discard_count < 64) {
+            for (int k = 0; k < n && slimed >= 0 && g_battle.discard_count < 64; k++) {
                 g_battle.discard[g_battle.discard_count++] = CARD_ENTRY(slimed, 0);
             }
             break;
         }
+        case MOVE_PREP:
+            /* Slime Boss' Prep is a no-op that only queues the Slam intent. */
+            break;
+        case MOVE_FRAIL:
+            g_battle.frail += move->value;
+            g_battle.frail_just = 1;
+            break;
         default:
             break;
         }
@@ -2851,6 +2918,39 @@ void battle_test_spawn_act2_monster(int which) {
     g_battle.phase = PHASE_PLAYER;
     g_battle.pending_split = -1;
     setup_act2_monster(which);
+}
+
+void battle_test_spawn_act1(int which) {
+    memset(&g_battle, 0, sizeof(g_battle));
+    g_battle.hp = 80;
+    g_battle.max_hp = 80;
+    g_battle.energy = 3;
+    g_battle.max_energy = 3;
+    g_battle.phase = PHASE_PLAYER;
+    g_battle.pending_split = -1;
+    g_run.act = 1;
+    if (which == 0) {
+        setup_encounter(NODE_BOSS);
+    } else if (which == 1) {
+        setup_encounter(NODE_ELITE);
+    } else if (which == 2) {
+        g_map.row = 0;
+        setup_encounter(NODE_MONSTER);
+    } else {
+        g_map.row = 3;
+        setup_encounter(NODE_MONSTER);
+    }
+}
+
+void battle_test_split_boss(void) {
+    if (g_battle.enemy_count < 1) return;
+    Enemy *boss = &g_battle.enemies[0];
+    if (boss->moves != BOSS_MOVES || boss->hp <= 0) return;
+    boss->hp = boss->max_hp / 2;
+    boss->split_done = 0;
+    g_battle.pending_split = -1;
+    (void)damage_enemy_typed(0, 1, 0);
+    resolve_pending_split();
 }
 
 void battle_test_apply_relics(void) { apply_relics_on_start(); }

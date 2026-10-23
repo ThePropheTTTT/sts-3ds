@@ -56,6 +56,8 @@ enum {
     MOVE_COMMAND,        /* Gremlin Leader: value = Strength, value2 = ally block */
     MOVE_PROTECT,        /* Gremlin Tsundere: value = block to a random ally */
     MOVE_CHARGE,         /* Gremlin Wizard: charge; at currentCharge 3 it blasts 25 */
+    MOVE_PREP,           /* Slime Boss: the no-op Prep turn (UNKNOWN intent) */
+    MOVE_FRAIL,          /* value = Frail on the player, no damage */
 };
 
 /* Act 2 uses the same room chances as Act 1 (TheCity.java), so only the
@@ -283,6 +285,10 @@ void battle_test_damage_enemy(int index, int amount);
 void battle_test_spawn_slavers(void);
 /* 0 two Byrds, 1 Chosen, 2 Shelled Parasite, 3 Spheric Guardian. */
 void battle_test_spawn_act2_monster(int which);
+/* 0 Slime Boss, 1 Gremlin Nob, 2 two Acid Slimes (M), 3 Jaw Worm. */
+void battle_test_spawn_act1(int which);
+/* Drops the Slime Boss to half HP and resolves the split. */
+void battle_test_split_boss(void);
 void battle_test_choose_roll(int index, unsigned int roll);
 void battle_test_enemy_turn(int index);
 void battle_test_apply_relics(void);

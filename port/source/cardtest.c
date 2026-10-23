@@ -2024,6 +2024,184 @@ static void test_batch12(void) {
     check("leader death clears three", g_battle.enemies[3].hp, 0);
 }
 
+/* ---- batch 13: act 1 move sets and the Slime Boss split ---------------- */
+
+static void test_batch13(void) {
+    Enemy *e;
+
+    /* Slime Boss: Sticky (3 Slimed, no damage) -> Prep -> Slam 35 -> Sticky. */
+    battle_test_spawn_act1(0);
+    e = &g_battle.enemies[0];
+    check("slime boss one enemy", g_battle.enemy_count, 1);
+    check("slime boss hp", e->max_hp, 140);
+    check("slime boss opening", e->move_index, 2);
+    check("slime boss opening kind", e->moves[e->move_index].kind, MOVE_SLIME);
+    check("slime boss goop count", e->moves[e->move_index].value2, 3);
+    battle_test_enemy_turn(0);
+    check("slime goop no damage", g_battle.hp, 80);
+    check("slime goop cards", g_battle.discard_count, 3);
+    check("slime boss prep", e->move_index, 1);
+    battle_test_enemy_turn(0);
+    check("slime prep no damage", g_battle.hp, 80);
+    check("slime boss slam", e->move_index, 0);
+    battle_test_enemy_turn(0);
+    check("slime slam damage", g_battle.hp, 45);
+    check("slime boss sticky again", e->move_index, 2);
+
+    /* Half HP split: the two L slimes inherit the boss' remaining HP. */
+    battle_test_spawn_act1(0);
+    battle_test_split_boss();
+    check("split two enemies", g_battle.enemy_count, 2);
+    check("split spike hp", g_battle.enemies[0].max_hp, 69);
+    check("split acid hp", g_battle.enemies[1].max_hp, 69);
+    check("split spike name", strcmp(g_battle.enemies[0].name, "尖刺史莱姆"), 0);
+    check("split acid name", strcmp(g_battle.enemies[1].name, "酸液史莱姆"), 0);
+    check("split spike moves", g_battle.enemies[0].move_count, 2);
+    check("split acid moves", g_battle.enemies[1].move_count, 3);
+    check("split spike opening legal", g_battle.enemies[0].move_index < 2, 1);
+    check("split acid opening legal", g_battle.enemies[1].move_index < 3, 1);
+    check("split spike table", g_battle.enemies[0].moves[0].kind, MOVE_SLIME);
+    check("split spike goop", g_battle.enemies[0].moves[0].value2, 2);
+    check("split acid table", g_battle.enemies[1].moves[0].value2, 2);
+
+    /* Gremlin Nob opens with Bellow, then 33% / two Rushes force Skull Bash. */
+    battle_test_spawn_act1(1);
+    e = &g_battle.enemies[0];
+    check("nob hp", e->max_hp, 82);
+    check("nob bellow first", e->move_index, 2);
+    check("nob bellow used", e->used_bellow, 1);
+    battle_test_choose_roll(0, 32);
+    check("nob bash roll", e->move_index, 1);
+    check("nob bash kind", e->moves[1].kind, MOVE_ATTACK_DEBUFF);
+    check("nob bash damage", e->moves[1].value, 6);
+    check("nob bash vuln", e->moves[1].value2, 2);
+    e->last_move = 0;
+    e->last_before = 0;
+    battle_test_choose_roll(0, 80);
+    check("nob two rushes bash", e->move_index, 1);
+    e->last_move = 1;
+    e->last_before = 1;
+    battle_test_choose_roll(0, 80);
+    check("nob rush otherwise", e->move_index, 0);
+    battle_test_spawn_act1(1);
+    g_battle.enemies[0].move_index = 1;
+    battle_test_enemy_turn(0);
+    check("nob bash hits", g_battle.hp, 74);
+    check("nob bash vulnerable", g_battle.vulnerable, 2);
+
+    /* Two Acid Slimes (M): opening move is one of Tackle/Wound/Lick. */
+    battle_test_spawn_act1(2);
+    check("acid pair count", g_battle.enemy_count, 2);
+    check("acid pair hp low", g_battle.enemies[0].max_hp >= 28, 1);
+    check("acid pair hp high", g_battle.enemies[1].max_hp <= 32, 1);
+    check("acid pair opening one", g_battle.enemies[0].move_index < 3, 1);
+    check("acid pair opening two", g_battle.enemies[1].move_index < 3, 1);
+    check("acid pair moves", g_battle.enemies[0].move_count, 3);
+
+    battle_test_spawn_act1(2);
+    g_battle.enemies[0].move_index = 1;
+    battle_test_enemy_turn(0);
+    check("acid wound tackle", g_battle.hp, 73);
+    check("acid wound slimed", g_battle.discard_count, 1);
+    battle_test_spawn_act1(2);
+    g_battle.enemies[0].move_index = 0;
+    battle_test_enemy_turn(0);
+    check("acid tackle", g_battle.hp, 70);
+    battle_test_spawn_act1(2);
+    g_battle.enemies[0].move_index = 2;
+    battle_test_enemy_turn(0);
+    check("acid lick", g_battle.weak, 1);
+
+    /* Spike Slime (L): Flame Tackle 16 + 2 Slimed, Frail Lick 2. */
+    battle_test_spawn_act1(0);
+    battle_test_split_boss();
+    g_battle.enemies[0].move_index = 0;
+    battle_test_enemy_turn(0);
+    check("spike flame damage", g_battle.hp, 64);
+    check("spike flame slimed", g_battle.discard_count, 2);
+    battle_test_spawn_act1(0);
+    battle_test_split_boss();
+    g_battle.enemies[0].move_index = 1;
+    battle_test_enemy_turn(0);
+    check("spike frail no damage", g_battle.hp, 80);
+    check("spike frail stacks", g_battle.frail, 2);
+    check("spike frail just", g_battle.frail_just, 1);
+
+    /* Spike Slime (L) getMove guards. */
+    e = &g_battle.enemies[0];
+    e->last_move = 255;
+    e->last_before = 255;
+    battle_test_choose_roll(0, 20);
+    check("spike flame roll", e->move_index, 0);
+    e->last_move = 0;
+    e->last_before = 0;
+    battle_test_choose_roll(0, 20);
+    check("spike two flames frail", e->move_index, 1);
+    e->last_move = 255;
+    e->last_before = 255;
+    battle_test_choose_roll(0, 50);
+    check("spike high roll frail", e->move_index, 1);
+    e->last_move = 1;
+    e->last_before = 1;
+    battle_test_choose_roll(0, 50);
+    check("spike two frails flame", e->move_index, 0);
+
+    /* Acid Slime (L): 11 + 2, 16, 2 Weak; each getMove branch legal. */
+    battle_test_spawn_act1(0);
+    battle_test_split_boss();
+    e = &g_battle.enemies[1];
+    e->last_move = 255;
+    e->last_before = 255;
+    battle_test_choose_roll(1, 10);
+    check("acid L wound roll", e->move_index, 0);
+    e->last_move = 0;
+    e->last_before = 0;
+    battle_test_choose_roll(1, 10);
+    check("acid L two wounds", e->move_index == 1 || e->move_index == 2, 1);
+    e->last_move = 255;
+    e->last_before = 255;
+    battle_test_choose_roll(1, 50);
+    check("acid L normal middle", e->move_index, 1);
+    e->last_move = 1;
+    e->last_before = 1;
+    battle_test_choose_roll(1, 50);
+    check("acid L after normal", e->move_index == 0 || e->move_index == 2, 1);
+    e->last_move = 255;
+    e->last_before = 255;
+    battle_test_choose_roll(1, 80);
+    check("acid L high weak", e->move_index, 2);
+    e->last_move = 2;
+    e->last_before = 2;
+    battle_test_choose_roll(1, 80);
+    check("acid L two weaks", e->move_index == 0 || e->move_index == 1, 1);
+
+    battle_test_spawn_act1(0);
+    battle_test_split_boss();
+    g_battle.enemies[1].move_index = 0;
+    battle_test_enemy_turn(1);
+    check("acid L wound damage", g_battle.hp, 69);
+    check("acid L wound slimed", g_battle.discard_count, 2);
+    battle_test_spawn_act1(0);
+    battle_test_split_boss();
+    g_battle.enemies[1].move_index = 1;
+    battle_test_enemy_turn(1);
+    check("acid L tackle", g_battle.hp, 64);
+    battle_test_spawn_act1(0);
+    battle_test_split_boss();
+    g_battle.enemies[1].move_index = 2;
+    battle_test_enemy_turn(1);
+    check("acid L lick", g_battle.weak, 2);
+
+    /* Jaw Worm still opens with Chomp 11. */
+    battle_test_spawn_act1(3);
+    check("jaw one enemy", g_battle.enemy_count, 1);
+    check("jaw opening", g_battle.enemies[0].move_index, 0);
+    check("jaw chomp", g_battle.enemies[0].moves[0].value, 11);
+    battle_test_enemy_turn(0);
+    check("jaw chomp damage", g_battle.hp, 69);
+}
+
+
 /* ---- picker preview ---------------------------------------------------- */
 
 /* The card-choice screen only appears mid-combat when one of seven cards is
@@ -2089,11 +2267,20 @@ void card_test_demo_fight(int which) {
      * 5 Spheric Guardian, 6 the three Slavers, 7 BronzeAutomaton with its
      * two summoned orbs, 8 the Collector with its Torch Heads, 9 the Gremlin
      * Leader with three different minions, 10 the same Champ fight with the
-     * act 3 background (a preview of beyondScene's floor stack).  Same spawn
-     * path the real encounter uses, then a hand so the bottom screen has
-     * cards to draw. */
-    if (which < 0 || which > 10) which = 0;
+     * act 3 background (a preview of beyondScene's floor stack), 11 Slime
+     * Boss, 12 Gremlin Nob, 13 two Acid Slimes (M), 14 Jaw Worm, 15 the
+     * Slime Boss' two split slimes.  Same spawn path the real encounter uses,
+     * then a hand so the bottom screen has cards to draw. */
+    if (which < 0 || which > 15) which = 0;
     if (which == 10) battle_test_spawn_act2(1);
+    else if (which == 11) battle_test_spawn_act1(0);
+    else if (which == 12) battle_test_spawn_act1(1);
+    else if (which == 13) battle_test_spawn_act1(2);
+    else if (which == 14) battle_test_spawn_act1(3);
+    else if (which == 15) {
+        battle_test_spawn_act1(0);
+        battle_test_split_boss();
+    }
     else if (which == 6) battle_test_spawn_slavers();
     else if (which == 7) {
         battle_test_spawn_automaton();
@@ -2109,7 +2296,7 @@ void card_test_demo_fight(int which) {
         battle_test_spawn_gremlin_minion(3, 2);
     } else if (which <= 1) battle_test_spawn_act2(which == 0 ? 1 : 0);
     else battle_test_spawn_act2_monster(which - 2);
-    g_run.act = (which == 10) ? 3 : 2;   /* display is 1-based: city, beyond */
+    g_run.act = (which == 10) ? 3 : (which >= 11 ? 1 : 2); /* display is 1-based */
     g_map.gold = 99;
     g_run.screen = SCREEN_FIGHT;
     g_battle.phase = PHASE_PLAYER;
@@ -2188,6 +2375,17 @@ void card_test_demo_fight(int which) {
             int idx = battle_find_card(draw_ids[i]);
             if (idx >= 0) g_battle.draw[g_battle.draw_count++] = CARD_ENTRY(idx, 0);
         }
+    } else if (which == 13) {
+        /* Acid Slimes (M): left Wound Tackle (7 + 黏液), right Lick (1 Weak). */
+        g_battle.enemies[0].move_index = 1;
+        g_battle.enemies[1].move_index = 2;
+    } else if (which == 14) {
+        /* Jaw Worm Thrash: 7 damage + 5 block. */
+        e->move_index = 1;
+    } else if (which == 15) {
+        /* Spike Slime (L) Flame Tackle and Acid Slime (L) Normal Tackle. */
+        g_battle.enemies[0].move_index = 0;
+        g_battle.enemies[1].move_index = 1;
     }
 }
 
@@ -2222,6 +2420,7 @@ void card_test_run(void) {
     test_batch10();
     test_batch11();
     test_batch12();
+    test_batch13();
     g_run.screen = SCREEN_MAP;
 }
 
