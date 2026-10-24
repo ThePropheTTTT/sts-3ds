@@ -33,6 +33,7 @@ enum { FS_SMALL = 0, FS_MID = 1, FS_BIG = 2 };
 /* Loads a sheet from romfs, falling back to sdmc:/3ds/sts3ds/ for emulator
  * testing (some 3dsx loaders do not mount the embedded romfs). */
 C2D_SpriteSheet sheet_load(const char *filename);
+int sheet_load_failures(void);
 
 void font_init(void);
 float text_draw(int size, const char *text, float x, float y, u32 color);

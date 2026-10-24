@@ -133,8 +133,8 @@ build/hello3ds.elf    1264668 bytes  EXEC / ARM / entry 0x100000
 ## 已知遗留
 
 - 还没有 `make`（也不影响当前构建，但正式工程建议补上，或改用已装好的 `3ds-cmake` 工具链文件）。
-- `.3dsx` 没有 SMDH（hbmenu 里会显示成无图标/无标题的那一项）。正式发布前用 `smdhtool` 生成 `.smdh` 并加 `--smdh=` 参数。
-- 只验证了「能编出合法 3dsx」，**没有在真机/Citra 上跑过**——第一次上机若崩，先怀疑 `consoleInit` 与 citro2d 共存、以及 `C2D_DrawCircleSolid` 的状态切换。
+- `port/build.sh` 在首次构建时用 `smdhtool` 生成 `build/sts3ds.smdh`，并传给 `3dsxtool --smdh=`；`tools/preflight.py` 会检查它的 `SMDH` magic 和大小。改了图标或标题后删掉旧 `.smdh` 再构建。
+- 已在 Azahar 上验证构建、启动自检、日志与覆盖层；**真机首次运行仍按 `docs/06-hardware-test.md` 走一遍**，先看 `sdmc:/3ds/sts3ds/log.txt` 的最后 `[stage]`。
 
 ## 模拟器输入的边界
 

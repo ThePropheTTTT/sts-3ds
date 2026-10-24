@@ -16,6 +16,10 @@
 
 背景音乐与音效从正版 jar 提取为 22050 Hz 单声道 PCM，放到 `sdmc:/3ds/sts3ds/audio/`（音效在 `audio/sfx/`）。音乐优先走 NDSP 流式播放，没有 DSP 固件时回退 CSND；音效只走 NDSP。提取命令、固件要求与模拟器备注见 [音频](docs/04-audio.md)。
 
+## 真机测试
+
+构建后运行 `python tools/preflight.py` 检查 3dsx/SMDH/romfs/资源；把 `sdmc` 参数指向 SD 卡还能读取启动日志和崩溃记录。游戏启动时会做资源、SD 写入与内存自检，失败会停在上屏报告；游戏中按 `L+R+SELECT` 可随时查看日志。完整流程见 [真机测试与诊断](docs/06-hardware-test.md)。
+
 ## 免责声明
 
 - 本项目与 Mega Crit、Humble Games 及相关权利方无任何关联，未获得其授权、认可或赞助。

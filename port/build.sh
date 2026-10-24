@@ -54,8 +54,9 @@ if [ ! -f build/$TARGET.smdh ]; then
         "$ROOT/assets/icon48.png" build/$TARGET.smdh "$ROOT/assets/icon24.png"
 fi
 
-OBJS="build/font.o build/battle.o build/run.o build/save.o build/audio.o build/main.o"
+OBJS="build/font.o build/battle.o build/run.o build/save.o build/audio.o build/diag.o build/main.o"
 
+arm-none-eabi-gcc $CFLAGS -c source/diag.c -o build/diag.o
 arm-none-eabi-gcc $CFLAGS -c source/font.c -o build/font.o
 arm-none-eabi-gcc $CFLAGS -c source/battle.c -o build/battle.o
 arm-none-eabi-gcc $CFLAGS -c source/run.c -o build/run.o

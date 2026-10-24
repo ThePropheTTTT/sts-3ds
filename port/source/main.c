@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "common.h"
+#include <3ds/allocator/linear.h>
 #include "cards_gen.h"
 #include "battle.h"
 #include "run.h"
@@ -19,6 +20,7 @@
 #include "map_paper_gen.h"
 #include "save.h"
 #include "audio.h"
+#include "diag.h"
 #if defined(CARD_TEST)
 #include "cardtest.h"
 #endif
@@ -162,8 +164,11 @@ static int s_last_screen = -1;
 static int s_new_game_arm;   /* B twice on the map starts a fresh run */
 static char s_toast[96];
 static int s_toast_ttl;
+static int s_diag_overlay;
 
 static void play_card(int slot, int target);
+static void draw_diag_overlay_top(void);
+static void draw_diag_overlay_bottom(void);
 
 static struct {
     int active;
@@ -2602,6 +2607,184 @@ static void draw_pick_bottom(void) {
     text_draw(FS_SMALL, buf, 8, 222, COL_DIM);
 }
 
+/* ---- diagnostics screens ------------------------------------------------ */
+
+static u32 diag_state_color(int state) {
+    if (state == DIAG_FAIL) return COL_HP;
+    if (state == DIAG_WARN) return COL_GOLD;
+    return RGB(150, 190, 140);
+}
+
+/* The top screen is 400x240.  Names and details get separate columns so a
+ * long Chinese name cannot push its detail off the edge. */
+static void diag_draw_top_panel(const char *title, const char *sub, const char *footer) {
+    rect_fill(0.0f, 0.0f, TOP_W, TOP_H, RGB(9, 10, 12), 0.94f);
+    text_draw_depth(FS_MID, title, 8, 3, COL_GOLD, 0.96f);
+    if (sub) text_draw_depth(FS_SMALL, sub, 8, 25, COL_DIM, 0.96f);
+
+    int y = 41;
+    int shown = 0;
+    /* Failures first: the panel only has room for 13 rows, and the one row
+     * that matters must never be the one hidden after "还有 N 项". */
+    static const int order[3] = {DIAG_FAIL, DIAG_WARN, DIAG_OK};
+    for (int pass = 0; pass < 3 && shown < 13; pass++) {
+        for (int i = 0; i < diag_row_count() && shown < 13; i++) {
+            if (diag_row_state(i) != order[pass]) continue;
+            int st = diag_row_state(i);
+            char mark[4];
+            snprintf(mark, sizeof(mark), "%s",
+                     st == DIAG_FAIL ? "X" : (st == DIAG_WARN ? "!" : "+"));
+            text_draw_depth(FS_SMALL, mark, 8, (float)y, diag_state_color(st), 0.96f);
+            text_draw_depth(FS_SMALL, diag_row_name(i), 22, (float)y,
+                            st == DIAG_FAIL ? COL_INK : COL_DIM, 0.96f);
+            text_draw_depth(FS_SMALL, diag_row_detail(i), 220, (float)y, COL_DIM, 0.96f);
+            y += 12;
+            shown++;
+        }
+    }
+    if (diag_row_count() == 0) {
+        text_draw_depth(FS_SMALL, "没有检查项", 8, (float)y, COL_DIM, 0.96f);
+    } else if (diag_row_count() > shown) {
+        char more[64];
+        snprintf(more, sizeof(more), "还有 %d 项，见日志", diag_row_count() - shown);
+        text_draw_depth(FS_SMALL, more, 8, (float)y, COL_DIM, 0.96f);
+    }
+    text_draw_depth(FS_SMALL, footer, 8, 224, COL_DIM, 0.96f);
+}
+
+/* The bottom screen has the latest log lines: no need to take the SD card out
+ * just to find out which stage failed. */
+static void diag_draw_bottom_panel(const char *footer) {
+    rect_fill(0.0f, 0.0f, BOT_W, BOT_H, RGB(9, 10, 12), 0.94f);
+    text_draw_depth(FS_MID, "日志尾", 8, 2, COL_GOLD, 0.96f);
+    int n = diag_tail_count();
+    int y = 24;
+    for (int i = 0; i < n; i++) {
+        const char *line = diag_tail_line(i);
+        if (!line || !line[0]) continue;
+        text_draw_depth(FS_SMALL, line, 8, (float)y, COL_INK, 0.96f);
+        y += 17;
+        if (y > 190) break;
+    }
+    text_draw_depth(FS_SMALL, footer, 8, 222, COL_DIM, 0.96f);
+}
+
+static void draw_diag_overlay_top(void) {
+    char sub[128];
+    snprintf(sub, sizeof(sub), "阶段 %s   失败 %d   警告 %d",
+             diag_last_stage(), diag_fail_count(), diag_warn_count());
+    diag_draw_top_panel("诊断 / 自检", sub, "L+R+SELECT 或 B 关闭");
+}
+
+static void draw_diag_overlay_bottom(void) {
+    char footer[96];
+    snprintf(footer, sizeof(footer), "日志 %s", diag_log_path());
+    diag_draw_bottom_panel(footer);
+}
+
+#if !defined(CARD_TEST)
+static void diag_boot_screen(void) {
+    while (aptMainLoop()) {
+        hidScanInput();
+        u32 k = hidKeysDown();
+        if (k & (KEY_A | KEY_START | KEY_B)) break;
+
+        char sub[128];
+        snprintf(sub, sizeof(sub), "阶段 %s   失败 %d   警告 %d",
+                 diag_last_stage(), diag_fail_count(), diag_warn_count());
+        C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
+        C2D_TargetClear(s_top, RGB(8, 9, 10));
+        C2D_SceneBegin(s_top);
+        diag_draw_top_panel("STS 3DS 启动自检", sub, "A / START 继续");
+        C2D_TargetClear(s_bottom, RGB(8, 9, 10));
+        C2D_SceneBegin(s_bottom);
+        diag_draw_bottom_panel("日志在 sdmc:/3ds/sts3ds/log.txt");
+        C3D_FrameEnd(0);
+    }
+}
+#endif
+
+/* ---- startup checks ------------------------------------------------------ */
+
+static void diag_check_asset(const char *name) {
+    char path[96];
+    const char *src = "romfs";
+    snprintf(path, sizeof(path), "romfs:/%s", name);
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        snprintf(path, sizeof(path), "sdmc:/3ds/sts3ds/%s", name);
+        f = fopen(path, "rb");
+        src = "sdmc";
+    }
+    diag_check(name, f != NULL, f ? src : "缺失");
+    if (f) fclose(f);
+}
+
+static void diag_boot_checks(void) {
+    static const char *const assets[] = {
+        "font_12.t3x", "font_16.t3x", "font_20.t3x",
+        "act1.t3x", "act2.t3x", "act3.t3x",
+        "monsters.t3x", "combat.t3x", "ui.t3x", "map_paper.t3x",
+        "relic_icons.t3x", "visuals.t3x",
+    };
+    for (unsigned i = 0; i < sizeof(assets) / sizeof(assets[0]); i++)
+        diag_check_asset(assets[i]);
+    for (int p = 0; p < STS_CARD_ART_PAGES && p < 4; p++) {
+        char name[32];
+        snprintf(name, sizeof(name), "cards_%03d.t3x", p);
+        diag_check_asset(name);
+    }
+
+    /* A file can exist and still fail to decode; sheet_load() already tried
+     * every one of them, so its counter is the authoritative load result. */
+    int load_failures = sheet_load_failures();
+    char load_detail[64];
+    snprintf(load_detail, sizeof(load_detail), "失败 %d 个", load_failures);
+    diag_check("资源加载", load_failures == 0, load_detail);
+
+    /* The game must be able to write its own directory (save + logs). */
+    const char *tmp = "sdmc:/3ds/sts3ds/diag.tmp";
+    FILE *f = fopen(tmp, "wb");
+    int sd_ok = 0;
+    if (f) {
+        sd_ok = fputc('x', f) != EOF;
+        fclose(f);
+        remove(tmp);
+    }
+    diag_check("SD 可写", sd_ok, sd_ok ? "" : "无法写 sdmc:/3ds/sts3ds");
+
+    u32 lin = linearSpaceFree();
+    char detail[64];
+    snprintf(detail, sizeof(detail), "剩余 %lu KB", (unsigned long)(lin / 1024u));
+    diag_check("线性内存", lin > 64u * 1024u, detail);
+
+    u32 app = osGetMemRegionFree(MEMREGION_APPLICATION);
+    snprintf(detail, sizeof(detail), "剩余 %lu KB", (unsigned long)(app / 1024u));
+    diag_check("应用内存", app > 2u * 1024u * 1024u, detail);
+
+    u32 firm = osGetFirmVersion();
+    u32 kern = osGetKernelVersion();
+    diag_log("firmware %lu.%lu.%lu, kernel %lu.%lu.%lu",
+             (unsigned long)GET_VERSION_MAJOR(firm),
+             (unsigned long)GET_VERSION_MINOR(firm),
+             (unsigned long)GET_VERSION_REVISION(firm),
+             (unsigned long)GET_VERSION_MAJOR(kern),
+             (unsigned long)GET_VERSION_MINOR(kern),
+             (unsigned long)GET_VERSION_REVISION(kern));
+    diag_log("memtype %lu", (unsigned long)osGetApplicationMemType());
+    diag_log("app free %lu KB, linear free %lu KB",
+             (unsigned long)(app / 1024u), (unsigned long)(lin / 1024u));
+
+    /* Music and effects live on the SD card; the game is playable without
+     * them, so these are warnings, not failures. */
+    f = fopen("sdmc:/3ds/sts3ds/audio/act1.pcm", "rb");
+    if (f) fclose(f);
+    else diag_warn("音乐文件", "act1.pcm 缺失，静音");
+    f = fopen("sdmc:/3ds/sts3ds/audio/sfx/card_play.pcm", "rb");
+    if (f) fclose(f);
+    else diag_warn("音效文件", "sfx/card_play.pcm 缺失");
+}
+
 static void scene_top(void) {
     C2D_TargetClear(s_top, RGB(16, 18, 20));
     C2D_SceneBegin(s_top);
@@ -2647,6 +2830,7 @@ static void scene_top(void) {
         }
         break;
     }
+    if (s_diag_overlay) draw_diag_overlay_top();
 }
 
 static void scene_bottom(void) {
@@ -2715,6 +2899,7 @@ static void scene_bottom(void) {
         break;
     }
     if (s_detail && g_run.screen == SCREEN_FIGHT) draw_detail_panel();
+    if (s_diag_overlay) draw_diag_overlay_bottom();
 }
 
 /* Konami code: 上上下下左右左右 B A B A. */
@@ -2974,6 +3159,21 @@ static void play_card(int slot, int target) {
 }
 
 static void handle_buttons(u32 kDown) {
+    /* Diagnostics are always reachable, even on a screen whose own keys are
+     * broken.  The combo is checked before the screen switch so L/R cannot
+     * page a list while the overlay is being opened. */
+    if ((hidKeysHeld() & (KEY_L | KEY_R | KEY_SELECT)) == (KEY_L | KEY_R | KEY_SELECT)) {
+        if (kDown & KEY_SELECT) {
+            s_diag_overlay = !s_diag_overlay;
+            diag_log("diagnostic overlay %s", s_diag_overlay ? "on" : "off");
+        }
+        return;
+    }
+    if (s_diag_overlay) {
+        if (kDown & (KEY_B | KEY_SELECT | KEY_START)) s_diag_overlay = 0;
+        return;
+    }
+
     switch (g_run.screen) {
     case SCREEN_FIGHT:
         if (s_detail) {
@@ -3299,22 +3499,56 @@ int main(int argc, char **argv) {
     (void)argc;
     (void)argv;
 
-    romfsInit();
+    diag_init();
+    diag_stage("romfsInit");
+    Result rc = romfsInit();
+    diag_log("romfsInit result 0x%08lx", (unsigned long)rc);
+    if (R_FAILED(rc)) diag_check("romfsInit", 0, "失败，改用 SD 资源");
+
+    diag_stage("gfxInitDefault");
     gfxInitDefault();
+    diag_stage("C3D_Init");
     C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
+    diag_stage("C2D_Init");
     C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
+    diag_stage("C2D_Prepare");
     C2D_Prepare();
 
     s_top = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
     s_bottom = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
 
+    diag_stage("font_init");
     font_init();
+    diag_stage("load_art");
     load_art();
+    diag_stage("audio_init");
     audio_init();
+
+    char adbg[160];
+    audio_debug(adbg, sizeof(adbg));
+    diag_log("music: %s", adbg);
+    audio_sfx_debug(adbg, sizeof(adbg));
+    diag_log("sfx: %s", adbg);
+
+    diag_stage("save_load");
 #if defined(CARD_TEST)
     run_start();   /* the self-test starts from a known state, never a save */
+    diag_log("CARD_TEST: run_start");
 #else
-    if (!save_load()) run_start();
+    int loaded = save_load();
+    diag_log("save_load: %d", loaded);
+    if (!loaded) run_start();
+#endif
+
+    diag_stage("boot checks");
+    diag_boot_checks();
+#if !defined(CARD_TEST)
+    hidScanInput();
+    if (diag_fail_count() > 0 || (hidKeysHeld() & KEY_SELECT)) {
+        diag_log("boot screen: failures=%d warnings=%d",
+                 diag_fail_count(), diag_warn_count());
+        diag_boot_screen();
+    }
 #endif
 
 #if defined(CARD_TEST)
@@ -3324,7 +3558,10 @@ int main(int argc, char **argv) {
     while (aptMainLoop()) {
         hidScanInput();
         u32 kDown = hidKeysDown();
-        if (kDown & KEY_START) break;
+        if (kDown & KEY_START) {
+            diag_log("CARD_TEST: START exit");
+            break;
+        }
         /* X/Y/SELECT pick one of the three picker layouts; inside the preview
          * the real picker input runs, so the cursor, paging and confirm keys
          * are exercised too. */
@@ -3395,6 +3632,7 @@ int main(int argc, char **argv) {
     C3D_Fini();
     gfxExit();
     romfsExit();
+    diag_shutdown();
     return 0;
 #endif
 
@@ -3402,6 +3640,7 @@ int main(int argc, char **argv) {
         hidScanInput();
         u32 kDown = hidKeysDown();
         if (kDown & KEY_START) {
+            diag_log("exit: START on screen %d", g_run.screen);
             save_write();
             break;
         }
@@ -3435,7 +3674,7 @@ int main(int argc, char **argv) {
 
         konami_feed(kDown);
         s_debug_layers = (hidKeysHeld() & KEY_SELECT) != 0;
-        handle_touch();
+        if (!s_diag_overlay) handle_touch();
         handle_buttons(kDown);
         update_floaters();
         update_play_fx();
@@ -3458,5 +3697,6 @@ int main(int argc, char **argv) {
     C3D_Fini();
     gfxExit();
     romfsExit();
+    diag_shutdown();
     return 0;
 }

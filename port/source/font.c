@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "common.h"
+#include "diag.h"
 
 typedef struct {
     C3D_Tex *tex;
@@ -24,13 +25,29 @@ static Tex3DS_SubTexture s_subs12[STS_FONT_12_COUNT];
 static Tex3DS_SubTexture s_subs16[STS_FONT_16_COUNT];
 static Tex3DS_SubTexture s_subs20[STS_FONT_20_COUNT];
 
+static int s_sheet_failures;
+
 C2D_SpriteSheet sheet_load(const char *filename) {
     char path[96];
     snprintf(path, sizeof(path), "romfs:/%s", filename);
     C2D_SpriteSheet sheet = C2D_SpriteSheetLoad(path);
-    if (sheet) return sheet;
+    if (sheet) {
+        diag_log("sheet %s: romfs", filename);
+        return sheet;
+    }
     snprintf(path, sizeof(path), "sdmc:/3ds/sts3ds/%s", filename);
-    return C2D_SpriteSheetLoad(path);
+    sheet = C2D_SpriteSheetLoad(path);
+    if (sheet) {
+        diag_log("sheet %s: sdmc fallback", filename);
+        return sheet;
+    }
+    diag_log("sheet %s: MISSING", filename);
+    s_sheet_failures++;
+    return NULL;
+}
+
+int sheet_load_failures(void) {
+    return s_sheet_failures;
 }
 
 static void build_subs(Tex3DS_SubTexture *subs, const StsGlyph *glyphs, int count) {
