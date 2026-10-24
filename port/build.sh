@@ -41,6 +41,7 @@ if [ "${CARD_TEST:-0}" = "1" ]; then
     EXTRA_OBJS="build/cardtest.o"
 fi
 
+rm -rf build/romfs
 mkdir -p build/romfs
 cp "$ROOT"/assets/t3x/font_12.t3x "$ROOT"/assets/t3x/font_16.t3x "$ROOT"/assets/t3x/font_20.t3x build/romfs/
 cp "$ROOT"/assets/t3x/cards_*.t3x "$ROOT"/assets/t3x/relic_icons.t3x \
@@ -48,6 +49,22 @@ cp "$ROOT"/assets/t3x/cards_*.t3x "$ROOT"/assets/t3x/relic_icons.t3x \
    "$ROOT"/assets/t3x/act2.t3x "$ROOT"/assets/t3x/act3.t3x \
    "$ROOT"/assets/t3x/monsters.t3x "$ROOT"/assets/t3x/combat.t3x \
    "$ROOT"/assets/t3x/ui.t3x "$ROOT"/assets/t3x/map_paper.t3x build/romfs/
+
+# The extracted PCM is optional at build time: when it is present it goes into
+# the 3dsx romfs, so a stock 3dsx carries its own music and effects.  The SD
+# card copy remains a fallback (and is still useful for quick audio swaps).
+if [ -f "$ROOT/assets/audio/act1.pcm" ]; then
+    mkdir -p build/romfs/audio/sfx
+    cp "$ROOT"/assets/audio/act1.pcm "$ROOT"/assets/audio/act2.pcm \
+       "$ROOT"/assets/audio/act3.pcm build/romfs/audio/
+    for f in "$ROOT"/assets/audio/sfx/*.pcm; do
+        [ -e "$f" ] || continue
+        cp "$f" build/romfs/audio/sfx/
+    done
+    echo "romfs audio: $(du -sh build/romfs/audio | cut -f1)"
+else
+    echo "romfs audio: missing assets/audio; building a silent 3dsx" >&2
+fi
 
 if [ ! -f build/$TARGET.smdh ]; then
     smdhtool --create "STS 3DS" "Slay the Spire, rewired for New 3DS" "local build" \

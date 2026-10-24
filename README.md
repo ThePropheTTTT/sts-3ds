@@ -14,7 +14,7 @@
 
 ## 音频
 
-背景音乐与音效从正版 jar 提取为 22050 Hz 单声道 PCM，放到 `sdmc:/3ds/sts3ds/audio/`（音效在 `audio/sfx/`）。音乐优先走 NDSP 流式播放，没有 DSP 固件时回退 CSND；音效只走 NDSP。提取命令、固件要求与模拟器备注见 [音频](docs/04-audio.md)。
+背景音乐与音效从正版 jar 提取为 22050 Hz 单声道 PCM，构建时直接打包进 3dsx 的 romfs（`assets/audio/` 存在即可）；`sdmc:/3ds/sts3ds/audio/` 只是可选的覆盖/回退。音乐优先走 NDSP 流式播放，没有 DSP 固件时回退 CSND；音效只走 NDSP。提取命令、固件要求与模拟器备注见 [音频](docs/04-audio.md)。
 
 ## 真机测试
 

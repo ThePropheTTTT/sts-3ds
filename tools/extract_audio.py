@@ -11,6 +11,10 @@ Music (the default; streamed in one-third-second buffers by audio.c):
     act2.pcm  <- audio/music/STS_Level2_NewMix_v1.ogg
     act3.pcm  <- audio/music/STS_Level3_v2.ogg
 
+port/build.sh copies these files into the 3dsx romfs when assets/audio exists,
+so the built package carries its own music and effects.  --dest additionally
+copies them to an SD card folder; that copy is now only a fallback.
+
 Sound effects (--sfx; one whole clip per file, played on NDSP channels 1..23):
 
     sfx/<name>.pcm <- audio/sound/<original clip>
@@ -103,7 +107,7 @@ def main() -> int:
     ap.add_argument("--sfx", action="store_true",
                     help="bake the combat/UI sound effects instead of the act themes")
     ap.add_argument("--dest", default=None,
-                    help="also copy the .pcm files here (SD card folder)")
+                    help="also copy the .pcm files here (optional SD-card fallback)")
     args = ap.parse_args()
 
     ffmpeg = find_ffmpeg()
@@ -135,9 +139,11 @@ def main() -> int:
                 print(f"    copied to {copied}")
 
     if args.sfx:
-        print("\nCopy assets/audio/sfx/*.pcm to sdmc:/3ds/sts3ds/audio/sfx/ on the SD card.")
+        print("\nbuild.sh will pack assets/audio/sfx/*.pcm into the 3dsx romfs.")
+        print("SD fallback: sdmc:/3ds/sts3ds/audio/sfx/")
     else:
-        print("\nCopy assets/audio/*.pcm to sdmc:/3ds/sts3ds/audio/ on the SD card.")
+        print("\nbuild.sh will pack assets/audio/*.pcm into the 3dsx romfs.")
+        print("SD fallback: sdmc:/3ds/sts3ds/audio/")
     return 0
 
 

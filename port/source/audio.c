@@ -26,6 +26,17 @@ static char s_init_err[64] = "ok";
 
 static const char *const TRACKS[3] = {"act1", "act2", "act3"};
 
+/* Audio ships inside the 3dsx romfs when build.sh finds assets/audio.  The
+ * SD card remains a fallback so a track can be replaced without rebuilding. */
+static FILE *audio_open(const char *relative) {
+    char path[96];
+    snprintf(path, sizeof(path), "romfs:/audio/%s", relative);
+    FILE *f = fopen(path, "rb");
+    if (f) return f;
+    snprintf(path, sizeof(path), "sdmc:/3ds/sts3ds/audio/%s", relative);
+    return fopen(path, "rb");
+}
+
 /* ---- one-shot effects --------------------------------------------------- */
 
 #define SFX_CHANNELS 23                 /* NDSP channels 1..23; 0 is music */
@@ -66,10 +77,9 @@ static void sfx_free(void) {
 
 static void sfx_load(void) {
     for (int i = AUDIO_SFX_NONE + 1; i < AUDIO_SFX_COUNT; i++) {
-        char path[80];
-        snprintf(path, sizeof(path), "sdmc:/3ds/sts3ds/audio/sfx/%s.pcm",
-                 SFX_FILES[i]);
-        FILE *f = fopen(path, "rb");
+        char relative[48];
+        snprintf(relative, sizeof(relative), "sfx/%s.pcm", SFX_FILES[i]);
+        FILE *f = audio_open(relative);
         if (!f) continue;
         if (fseek(f, 0, SEEK_END) != 0) { fclose(f); continue; }
         long bytes = ftell(f);
@@ -252,9 +262,9 @@ void audio_set_act(int act) {
     s_act = act;
     snprintf(s_track, sizeof(s_track), "%s", TRACKS[act - 1]);
 
-    char path[64];
-    snprintf(path, sizeof(path), "sdmc:/3ds/sts3ds/audio/%s.pcm", s_track);
-    s_file = fopen(path, "rb");
+    char relative[32];
+    snprintf(relative, sizeof(relative), "%s.pcm", s_track);
+    s_file = audio_open(relative);
     if (!s_file) return;
 
     if (fseek(s_file, 0, SEEK_END) != 0) {

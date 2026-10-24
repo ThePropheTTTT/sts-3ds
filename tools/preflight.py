@@ -7,8 +7,9 @@ devkitARM, no jar and no third-party packages:
     python tools/preflight.py
     python tools/preflight.py --sdmc E:\\
 
-The first form checks that the .3dsx, SMDH, romfs and generated t3x files are
-present and non-empty.  The second also reads
+The first form checks that the .3dsx, SMDH, romfs, generated t3x files and
+(if assets/audio exists) the packed PCM tracks are present and non-empty.  The
+second also reads
 
     3ds/sts3ds/log.txt
     3ds/sts3ds/crash.txt
@@ -28,6 +29,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 BUILD = ROOT / "port" / "build"
 ASSETS = ROOT / "assets" / "t3x"
+AUDIO = ROOT / "assets" / "audio"
+AUDIO_TRACKS = ["act1.pcm", "act2.pcm", "act3.pcm"]
 
 REQUIRED_ROMFS = [
     "font_12.t3x", "font_16.t3x", "font_20.t3x",
@@ -99,6 +102,27 @@ def check_package() -> int:
     for name in REQUIRED_ROMFS:
         if not check_file(ASSETS / name, f"assets/t3x/{name}"):
             failures += 1
+
+    # Audio is optional in the repository, but if it was extracted then the
+    # build must have packed it; otherwise the 3dsx silently ships silent.
+    if (AUDIO / "act1.pcm").is_file():
+        print("== romfs audio ==")
+        total = 0
+        for name in AUDIO_TRACKS:
+            path = romfs / "audio" / name
+            if check_file(path, f"romfs/audio/{name}"):
+                total += path.stat().st_size
+            else:
+                failures += 1
+        for src in sorted((AUDIO / "sfx").glob("*.pcm")):
+            path = romfs / "audio" / "sfx" / src.name
+            if check_file(path, f"romfs/audio/sfx/{src.name}"):
+                total += path.stat().st_size
+            else:
+                failures += 1
+        ok(f"packed audio: {total / (1024 * 1024):.1f} MiB")
+    else:
+        warn("assets/audio missing; the 3dsx has no music or effects")
     return failures
 
 

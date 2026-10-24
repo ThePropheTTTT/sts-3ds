@@ -4,18 +4,16 @@
 
 ## 1. 拷贝文件
 
-SD 卡根目录应至少有以下内容：
+SD 卡根目录只需要：
 
 ```
 /3ds/sts3ds.3dsx
-/3ds/sts3ds/audio/act1.pcm
-/3ds/sts3ds/audio/act2.pcm
-/3ds/sts3ds/audio/act3.pcm
-/3ds/sts3ds/audio/sfx/*.pcm
 ```
 
 - `sts3ds.3dsx` 可以放在 `/3ds/` 下任意位置；同目录的 `.smdh` 用于 Homebrew Launcher 的标题和图标。
-- 音频是可选的：缺少 `act1.pcm` 只会得到一条 WARN，游戏静音继续。SFX 目录同理。
+- 音乐与音效已经打包进 3dsx 的 romfs（前提是构建时 `assets/audio/` 存在）。`/3ds/sts3ds/audio/act*.pcm` 与 `audio/sfx/*.pcm` 现在只是可选的覆盖/回退，不需要再拷贝。
+- 如果构建时没有 `assets/audio/`，3dsx 会是静音的；启动自检会给出一条 WARN，游戏仍可继续。
+- 打包全部 BGM 后 3dsx 约 32 MB；Old 3DS 的加载器和内存可能不够，目标机型仍是 New 3DS。
 - 首次启动会自动创建 `/3ds/sts3ds/`，并写入日志。
 
 ## 2. 主机侧预检
@@ -27,11 +25,11 @@ python tools/preflight.py
 python tools/preflight.py --sdmc E:\
 ```
 
-第一条检查 `port/build/sts3ds.3dsx`、SMDH、romfs 和生成的全部 `.t3x` 是否齐全；第二条额外读取 SD 卡上的 `3ds/sts3ds/log.txt` 和 `crash.txt`，汇总 `[FAIL]` / `[WARN]` 与崩溃寄存器。
+第一条检查 `port/build/sts3ds.3dsx`、SMDH、romfs 和生成的全部 `.t3x` 是否齐全；如果 `assets/audio/` 存在，还会确认三首 BGM 与 `assets/audio/sfx/` 里的音效都已打进 `romfs/audio/`。第二条额外读取 SD 卡上的 `3ds/sts3ds/log.txt` 和 `crash.txt`，汇总 `[FAIL]` / `[WARN]` 与崩溃寄存器。
 
 - 退出码 0：包完整，SD 上没有阻塞问题。
 - 退出码 1：缺文件、日志有 FAIL 行，或 `crash.txt` 里记录了崩溃。
-- 警告（音乐/音效缺失）不会让退出码变成 1。
+- 警告（构建时没有 `assets/audio/`，或启动时 romfs/SD 都没有音频）不会让退出码变成 1。
 
 ## 3. 启动自检
 
@@ -86,9 +84,9 @@ python tools/preflight.py --sdmc E:\
 | `load_art` 后黑屏/缺图 | 某个 `.t3x` 没打进 romfs，或 SD 兜底也不存在 | 重跑 `tools/to_t3x.sh`，确认 `port/build/romfs/*.t3x`；看日志里 `sheet X: MISSING` |
 | `romfsInit` FAIL | 3dsx 不是用 `--romfs=build/romfs` 打包的 | 重新执行 `port/build.sh` |
 | `SD 可写` FAIL | SD 写保护/卡坏/路径不存在 | 检查卡、`/3ds/sts3ds` 权限；没有日志时优先查这个 |
-| `线性内存` FAIL | 音频或临时分配吃掉了 linear heap | 先移除 `audio/*.pcm` 排除音频；看 `log.txt` 的 `music/sfx` 行 |
+| `线性内存` FAIL | CSND 回退把整首 PCM 放进 linear heap，或临时分配过大 | 确认 NDSP 可用；CSND 回退时移除 SD 音频副本；看 `log.txt` 的 `music/sfx` 行 |
 | `应用内存` FAIL | 资源/存档占用过高 | 记录日志并对比上次构建；不要在这个状态下继续测试 |
-| 音乐 WARN / `ndspInit` 失败 | 真机缺少 DSP 固件或音频文件 | 游戏会静音继续；补 `audio/*.pcm`，或确认机器的 DSP 固件可用 |
+| 音乐 WARN / `ndspInit` 失败 | 构建时没有 `assets/audio`，romfs/SD 都没有音频，或真机缺少 DSP 固件 | 游戏会静音继续；重新构建并确认 `romfs/audio`，或确认机器的 DSP 固件可用 |
 | 有 `crash.txt` 但没有系统报错 | 进程被强制结束或异常处理器没跑到 | 看最后一条 `[stage]` 和日志时间戳，缩小到具体阶段 |
 
 ## 7. 自检构建（CARD_TEST）

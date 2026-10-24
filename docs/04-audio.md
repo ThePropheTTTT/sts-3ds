@@ -1,14 +1,16 @@
 # 音频：三幕 BGM 与音效
 
-音乐从正版 `desktop-1.0.jar` 的 `audio/music/` 提取，音效从 `audio/sound/` 提取，全部转成 22050 Hz、单声道、16 位 PCM。音乐运行时从 SD 卡流式读取；音效在启动时整段读入线性内存，按需播放。
+音乐从正版 `desktop-1.0.jar` 的 `audio/music/` 提取，音效从 `audio/sound/` 提取，全部转成 22050 Hz、单声道、16 位 PCM。构建时这些 PCM 会被打包进 3dsx 的 romfs；运行时优先从 romfs 读，SD 卡上的副本只作为覆盖/回退。音效在启动时整段读入线性内存，按需播放。
 
 ## 生成
 
 需要 `ffmpeg` 在 `PATH` 里（或设置 `FFMPEG` 环境变量）。
 
 ```powershell
-python tools/extract_audio.py --jar <正版 desktop-1.0.jar> --dest <sdmc>/3ds/sts3ds/audio
+python tools/extract_audio.py --jar <正版 desktop-1.0.jar>
 ```
+
+输出到 `assets/audio/`；`port/build.sh` 发现这些文件后会一并放进 3dsx 的 romfs。需要额外在 SD 卡上留一份回退时，再加 `--dest <sdmc>/3ds/sts3ds/audio`。
 
 脚本会写出三个文件：
 
@@ -18,7 +20,7 @@ python tools/extract_audio.py --jar <正版 desktop-1.0.jar> --dest <sdmc>/3ds/s
 | `act2.pcm` | `audio/music/STS_Level2_NewMix_v1.ogg` |
 | `act3.pcm` | `audio/music/STS_Level3_v2.ogg` |
 
-每个文件约 9–10 MB。`assets/audio/` 被 `.gitignore` 忽略，不随仓库分发。
+每个文件约 9–10 MB，三首合计约 28 MB；加音效后 3dsx 会增大约 29 MB。`assets/audio/` 被 `.gitignore` 忽略，不随仓库分发。若 `assets/audio/` 不存在，构建仍然成功，但会得到一个没有音乐/音效的静音 3dsx（构建日志会提示）。
 
 音效用同一脚本的 `--sfx` 模式生成：
 
@@ -26,7 +28,7 @@ python tools/extract_audio.py --jar <正版 desktop-1.0.jar> --dest <sdmc>/3ds/s
 python tools/extract_audio.py --sfx --jar <正版 desktop-1.0.jar> --dest <sdmc>/3ds/sts3ds/audio
 ```
 
-输出到 `assets/audio/sfx/`（`--dest` 时复制到 `<sdmc>/3ds/sts3ds/audio/sfx/`）。文件名与 `port/source/audio.h` 的 `AudioSfx` 枚举一一对应：
+输出到 `assets/audio/sfx/`（`--dest` 时复制到 `<sdmc>/3ds/sts3ds/audio/sfx/`）。这些文件同样会由 `build.sh` 打进 romfs，SD 副本只是回退。文件名与 `port/source/audio.h` 的 `AudioSfx` 枚举一一对应：
 
 | 文件 | 原版 SoundMaster 常量 | 用途 |
 |---|---|---|
@@ -54,7 +56,7 @@ python tools/extract_audio.py --sfx --jar <正版 desktop-1.0.jar> --dest <sdmc>
 
 `port/source/audio.c` 先尝试 NDSP：
 
-- 背景音乐按 1/3 秒一块、双缓冲从文件读，DSP 播完一块再补下一块，整首循环。
+- 背景音乐按 1/3 秒一块、双缓冲从 romfs（或 SD 回退）读，DSP 播完一块再补下一块，整首循环。
 - NDSP 需要 SD 卡上的 `/3ds/dspfirm.cdc`。这是用户自己机器的 DSP 固件，仓库不提供，也不能从游戏 jar 里取。
 - 真机没有该文件会初始化失败，自动回退 CSND。
 
@@ -64,11 +66,11 @@ CSND 回退：
 - 老 3DS 的线性堆较小，约 9–10 MB 的曲目可能分配失败；失败时静音，不崩溃。
 - 这条路径没有流式读取，属于“能响就行”的后备，不是首选。Azahar 的 CSND HLE 目前会把通道配置写入，但 `csndIsPlaying` 仍返回 0，所以模拟器里听不到这条路径；真机的 CSND 服务正常时才应出声。
 
-文件缺失时保持静音。切幕时 `audio_set_act()` 会停掉当前曲目，按 `g_run.act` 打开对应的 `act1/2/3.pcm`。
+文件缺失时保持静音。切幕时 `audio_set_act()` 会停掉当前曲目，按 `g_run.act` 先找 `romfs:/audio/act1/2/3.pcm`，找不到再找 `sdmc:/3ds/sts3ds/audio/act1/2/3.pcm`。音效同理（`romfs:/audio/sfx/` 优先）。
 
 ### 音效
 
-NDSP 初始化成功后，`audio.c` 把 `audio/sfx/*.pcm` 逐个读入线性内存（单文件上限 600 KB），并给 NDSP 通道 1–23 设好格式；通道 0 留给音乐。`audio_sfx(id)` 找一条空闲通道，清掉旧队列，挂上整段 PCM 后立即播放；所有通道都忙时直接丢弃这次请求，不做排队。CSND 回退只支持 BGM，音效静音。
+NDSP 初始化成功后，`audio.c` 把 `audio/sfx/*.pcm`（优先 romfs，其次 SD）逐个读入线性内存（单文件上限 600 KB），并给 NDSP 通道 1–23 设好格式；通道 0 留给音乐。`audio_sfx(id)` 找一条空闲通道，清掉旧队列，挂上整段 PCM 后立即播放；所有通道都忙时直接丢弃这次请求，不做排队。CSND 回退只支持 BGM，音效静音。
 
 播放点：
 
@@ -95,7 +97,7 @@ Azahar 的 DSP 是 HLE，不需要真正的 DSP 固件；但 libctru 的 `ndspIn
 
 `r` 是已经补过的 NDSP 缓冲块数；它随时间增长，说明 DSP 确实在消费流。第二条依次是已加载音效数、当前占用通道数、最近播放的 clip、累计播放次数。缺文件时分别显示 `音乐 act1.pcm 缺失`、`音效 0/17`。
 
-截图 `.tmp/shots/1400_sfx_report.png`（17/17、已发 0）和 `1404_sfx_report_played.png`（打出打击后已发 3，最近 `card_play`）是本条路径的证据；Azahar 的 NDSP HLE 不暴露实际发声，能验收的是加载、通道与调用计数。
+截图 `.tmp/shots/1400_sfx_report.png`（17/17、已发 0）和 `1404_sfx_report_played.png`（打出打击后已发 3，最近 `card_play`）是 SD 路径的证据；打包后的构建用 `.tmp/shots/1600_audio_pack_report.png` 验收：`音乐 act1 3:21 PLAYING NDSP r=32`、`音效 17/17`，且 `log.txt` 写有 `audio act1: romfs` / `audio sfx: romfs`。Azahar 的 NDSP HLE 不暴露实际发声，能验收的是加载、通道与缓冲推进。
 
 ## 已知缺口
 
@@ -103,3 +105,4 @@ Azahar 的 DSP 是 HLE，不需要真正的 DSP 固件；但 libctru 的 `ndspIn
 - 17 个片段中已接 12 个；`ui_click`、`card_select`、`exhaust`、`heal`、`gold` 还没有调用点。
 - 没有 Boss 曲、菜单曲和角色语音，只有三幕普通 BGM。
 - CSND 后备一次性占用整首曲目的线性内存，且不支持音效。
+- 三幕 BGM 全打包后 3dsx 约 32 MB；Old 3DS 的内存/加载器可能吃不消，目标机型仍是 New 3DS。若只是快速迭代，可先不放 `assets/audio/`，改用 SD 副本。

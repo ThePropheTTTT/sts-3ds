@@ -2720,6 +2720,26 @@ static void diag_check_asset(const char *name) {
     if (f) fclose(f);
 }
 
+static int diag_audio_present(const char *relative, char *detail, size_t cap) {
+    char path[96];
+    snprintf(path, sizeof(path), "romfs:/audio/%s", relative);
+    FILE *f = fopen(path, "rb");
+    if (f) {
+        fclose(f);
+        snprintf(detail, cap, "romfs");
+        return 1;
+    }
+    snprintf(path, sizeof(path), "sdmc:/3ds/sts3ds/audio/%s", relative);
+    f = fopen(path, "rb");
+    if (f) {
+        fclose(f);
+        snprintf(detail, cap, "sdmc");
+        return 1;
+    }
+    snprintf(detail, cap, "缺失");
+    return 0;
+}
+
 static void diag_boot_checks(void) {
     static const char *const assets[] = {
         "font_12.t3x", "font_16.t3x", "font_20.t3x",
@@ -2775,14 +2795,18 @@ static void diag_boot_checks(void) {
     diag_log("app free %lu KB, linear free %lu KB",
              (unsigned long)(app / 1024u), (unsigned long)(lin / 1024u));
 
-    /* Music and effects live on the SD card; the game is playable without
-     * them, so these are warnings, not failures. */
-    f = fopen("sdmc:/3ds/sts3ds/audio/act1.pcm", "rb");
-    if (f) fclose(f);
-    else diag_warn("音乐文件", "act1.pcm 缺失，静音");
-    f = fopen("sdmc:/3ds/sts3ds/audio/sfx/card_play.pcm", "rb");
-    if (f) fclose(f);
-    else diag_warn("音效文件", "sfx/card_play.pcm 缺失");
+    /* Music and effects prefer the copy packed into the 3dsx romfs; the SD
+     * card is only a fallback.  The game is playable without either, so a
+     * missing file is a warning, not a failure. */
+    char audio_src[16];
+    if (diag_audio_present("act1.pcm", audio_src, sizeof(audio_src)))
+        diag_log("audio act1: %s", audio_src);
+    else
+        diag_warn("音乐文件", "act1.pcm 缺失，静音");
+    if (diag_audio_present("sfx/card_play.pcm", audio_src, sizeof(audio_src)))
+        diag_log("audio sfx: %s", audio_src);
+    else
+        diag_warn("音效文件", "sfx/card_play.pcm 缺失");
 }
 
 static void scene_top(void) {

@@ -1,9 +1,11 @@
 /* Streamed background music and combat sound effects.
  *
  * The 3DS has no Vorbis decoder in libctru, so the audio is pre-converted on
- * the host to raw 22050 Hz mono PCM16 (tools/extract_audio.py).  The music is
- * read in small buffers; the short effects are kept in linear memory and
- * played on NDSP channels 1..23.  NDSP needs the console's DSP firmware;
+ * the host to raw 22050 Hz mono PCM16 (tools/extract_audio.py).  build.sh
+ * packs it into the 3dsx romfs when assets/audio exists; the SD card copy at
+ * /3ds/sts3ds/audio is an optional fallback.  The music is read in small
+ * buffers; the short effects are kept in linear memory and played on NDSP
+ * channels 1..23.  NDSP needs the console's DSP firmware;
  * without it a CSND fallback plays the music and the effects stay silent.
  * If the files are missing the game simply stays silent.
  */
