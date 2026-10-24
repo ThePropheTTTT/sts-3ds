@@ -2960,6 +2960,7 @@ void card_test_run(void) {
     s_cases = 0;
     s_fails = 0;
     memset(s_fail_text, 0, sizeof(s_fail_text));
+    audio_sfx_mute(1);   /* the assertions play hundreds of cards */
     test_batch1();
     test_powers();
     test_batch3();
@@ -2978,6 +2979,7 @@ void card_test_run(void) {
     test_batch16();
     test_batch17();
     g_run.screen = SCREEN_MAP;
+    audio_sfx_mute(0);
 }
 
 void card_test_draw(C3D_RenderTarget *top) {
@@ -2995,8 +2997,11 @@ void card_test_draw(C3D_RenderTarget *top) {
     }
     {   /* audio state: the streamer has no other visible surface yet */
         char abuf[96];
+        char sbuf[128];
         audio_debug(abuf, sizeof(abuf));
+        audio_sfx_debug(sbuf, sizeof(sbuf));
         text_draw(FS_SMALL, abuf, 8, 190, COL_DIM);
+        text_draw(FS_SMALL, sbuf, 8, 204, COL_DIM);
     }
-    text_draw(FS_SMALL, "START exit", 8, 214, COL_DIM);
+    text_draw(FS_SMALL, "START exit", 8, 220, COL_DIM);
 }

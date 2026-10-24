@@ -17,6 +17,7 @@
 #include "run.h"
 #include "l10n_gen.h"
 #include "save.h"
+#include "audio.h"
 
 /* Defined further down; potions use it before its definition. */
 static void damage_enemy(int index, int amount);
@@ -1402,6 +1403,7 @@ void battle_start(int kind) {
     g_run.screen = SCREEN_FIGHT;
     start_player_turn();
     apply_relics_on_start();
+    audio_sfx(AUDIO_SFX_BATTLE_START);
 }
 
 unsigned int battle_rand(void) { return rnd(); }
@@ -1590,6 +1592,7 @@ static int damage_enemy_typed(int index, int amount, int thorns) {
     int lost = amount - absorbed;
     e->hp -= lost;
     if (e->hp < 0) e->hp = 0;
+    if (lost > 0) audio_sfx(AUDIO_SFX_HIT);
     if (e->hp <= 0) on_enemy_death(index);
     if (lost > 0 && e->hp > 0) {
         /* FlightPower.onAttacked: lose a stack on every hit that got through,
@@ -1636,6 +1639,7 @@ static int damage_player_raw(int amount) {
     if (amount - absorbed <= 0) return 0;
     g_battle.hp -= amount - absorbed;
     if (g_battle.hp < 0) g_battle.hp = 0;
+    audio_sfx(AUDIO_SFX_HIT);
     g_battle.damaged++;                 /* Blood for Blood counts HP actually lost */
     return amount - absorbed;
 }
@@ -1827,6 +1831,7 @@ static void gain_block(int amount) {
      * block.  Panic Button pays its own block before the power is applied. */
     if (g_battle.no_block_turns > 0) return;
     g_battle.block += amount;
+    audio_sfx(AUDIO_SFX_BLOCK);
     /* JuggernautPower.onGainedBlock: damage a random enemy on every block gain. */
     if (pw(POW_JUGGERNAUT)) {
         int target = random_alive_enemy();
@@ -1839,6 +1844,7 @@ static void gain_block(int amount) {
 static void debuff_enemy(int index, int weak, int vulnerable) {
     if (!enemy_alive(index)) return;
     Enemy *e = &g_battle.enemies[index];
+    int applied = 0;
     /* ArtifactPower.onSpecificTrigger consumes one stack per ApplyPowerAction,
      * so a source that applies both Weak and Vulnerable loses two stacks. */
     if (weak > 0) {
@@ -1846,6 +1852,7 @@ static void debuff_enemy(int index, int weak, int vulnerable) {
             e->artifact--;
         } else {
             e->weak += weak;
+            applied = 1;
             if (pw(POW_SADISTIC)) damage_enemy(index, pw(POW_SADISTIC));
         }
     }
@@ -1854,9 +1861,11 @@ static void debuff_enemy(int index, int weak, int vulnerable) {
             e->artifact--;
         } else {
             e->vulnerable += vulnerable;
+            applied = 1;
             if (pw(POW_SADISTIC)) damage_enemy(index, pw(POW_SADISTIC));
         }
     }
+    if (applied) audio_sfx(AUDIO_SFX_DEBUFF);
 }
 
 /* onCardDraw: Evolve draws on Statuses, Fire Breathing burns on Statuses and
@@ -1909,6 +1918,7 @@ static void flush_necro(void) {
 static void win_battle(void) {
     if (g_battle.phase == PHASE_WIN) return;   /* a nested play already won */
     g_battle.phase = PHASE_WIN;
+    audio_sfx(AUDIO_SFX_VICTORY);
     if ((rnd() % 100) < 35) battle_add_random_potion();
     if (battle_has_relic(RELIC_BURNING_BLOOD)) {
         g_battle.hp += 6;
@@ -2406,6 +2416,7 @@ int battle_play(int slot, int target) {
     for (int i = 0; i < g_battle.enemy_count; i++) hp_before[i] = g_battle.enemies[i].hp;
 
     if (damage > 0) {
+        audio_sfx(damage >= 15 ? AUDIO_SFX_ATTACK_HEAVY : AUDIO_SFX_ATTACK_FAST);
         for (int h = 0; h < hits; h++) {
             if (c->target == 1) {
                 hit_all(damage);
@@ -2823,6 +2834,8 @@ int battle_play(int slot, int target) {
         }
     }
 
+    if (c->type == 2) audio_sfx(AUDIO_SFX_BUFF);
+
     flush_necro();
     resolve_pending_split();
     s_cards_played_turn++;
@@ -3209,6 +3222,7 @@ static void enemy_take_turn(int i) {
 void battle_end_turn(void) {
     if (g_run.screen != SCREEN_FIGHT || g_battle.phase != PHASE_PLAYER) return;
     if (!end_turn_powers()) return;
+    audio_sfx(AUDIO_SFX_END_TURN);
 
     /* EntanglePower.atEndOfTurn: the lock is lifted as the turn ends. */
     g_battle.entangled = 0;
@@ -3223,6 +3237,7 @@ void battle_end_turn(void) {
     if (g_battle.hp <= 0) {
         g_battle.phase = PHASE_LOSE;
         g_run.screen = SCREEN_DEFEAT;
+        audio_sfx(AUDIO_SFX_DEFEAT);
         return;
     }
     g_battle.phase = PHASE_PLAYER;

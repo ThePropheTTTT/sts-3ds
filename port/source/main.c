@@ -2958,7 +2958,11 @@ static void handle_touch(void) {
  * instead of silently doing nothing. */
 static void play_card(int slot, int target) {
     int r = battle_play(slot, target);
-    if (r >= 0) return;
+    if (r >= 0) {
+        audio_sfx(AUDIO_SFX_CARD_PLAY);
+        return;
+    }
+    audio_sfx(AUDIO_SFX_CARD_REJECT);
     const char *msg = "这张牌现在不能打出";
     if (r == -3) msg = "能量不足";
     else if (r == -4) msg = "没有合法目标";

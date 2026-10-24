@@ -1,6 +1,6 @@
-# 音频：把三幕 BGM 放到 SD 卡上
+# 音频：三幕 BGM 与音效
 
-移植版目前只做**背景音乐**，不做音效。音乐从正版 `desktop-1.0.jar` 的 `audio/music/` 提取，转成 22050 Hz、单声道、16 位 PCM，运行时从 SD 卡流式读取。
+音乐从正版 `desktop-1.0.jar` 的 `audio/music/` 提取，音效从 `audio/sound/` 提取，全部转成 22050 Hz、单声道、16 位 PCM。音乐运行时从 SD 卡流式读取；音效在启动时整段读入线性内存，按需播放。
 
 ## 生成
 
@@ -20,6 +20,36 @@ python tools/extract_audio.py --jar <正版 desktop-1.0.jar> --dest <sdmc>/3ds/s
 
 每个文件约 9–10 MB。`assets/audio/` 被 `.gitignore` 忽略，不随仓库分发。
 
+音效用同一脚本的 `--sfx` 模式生成：
+
+```powershell
+python tools/extract_audio.py --sfx --jar <正版 desktop-1.0.jar> --dest <sdmc>/3ds/sts3ds/audio
+```
+
+输出到 `assets/audio/sfx/`（`--dest` 时复制到 `<sdmc>/3ds/sts3ds/audio/sfx/`）。文件名与 `port/source/audio.h` 的 `AudioSfx` 枚举一一对应：
+
+| 文件 | 原版 SoundMaster 常量 | 用途 |
+|---|---|---|
+| `ui_click.pcm` | `UI_CLICK_1` | 菜单点击 |
+| `card_select.pcm` | `CARD_SELECT` | 选牌/移动焦点 |
+| `card_play.pcm` | `UI_Parchment_3` | 打出一张牌 |
+| `card_reject.pcm` | `CARD_REJECT` | 不能打出 |
+| `attack_fast.pcm` | `ATTACK_FAST` | 普通攻击 |
+| `attack_heavy.pcm` | `ATTACK_HEAVY` | 重击（伤害 ≥ 15） |
+| `hit.pcm` | `BLUNT_FAST` | 实际掉血 |
+| `block.pcm` | `BLOCK_GAIN` | 获得格挡 |
+| `buff.pcm` | `BUFF_1` | 能力牌 |
+| `debuff.pcm` | `DEBUFF_1` | 给敌人上负面状态 |
+| `end_turn.pcm` | `END_TURN` | 结束回合 |
+| `battle_start.pcm` | `BATTLE_START_1` | 进入战斗 |
+| `victory.pcm` | `VICTORY` | 战斗胜利 |
+| `defeat.pcm` | `DEATH_STINGER` | 玩家死亡 |
+| `exhaust.pcm` | `CARD_EXHAUST` | 消耗（预留） |
+| `heal.pcm` | `HEAL_1` | 治疗（预留） |
+| `gold.pcm` | `GOLD_GAIN` | 获得金币（预留） |
+
+17 个文件合计约 1 MB。表中前 12 项已经接入；`ui_click`、`card_select`、`exhaust`、`heal`、`gold` 已生成但还没有调用点。
+
 ## 运行时
 
 `port/source/audio.c` 先尝试 NDSP：
@@ -36,22 +66,40 @@ CSND 回退：
 
 文件缺失时保持静音。切幕时 `audio_set_act()` 会停掉当前曲目，按 `g_run.act` 打开对应的 `act1/2/3.pcm`。
 
+### 音效
+
+NDSP 初始化成功后，`audio.c` 把 `audio/sfx/*.pcm` 逐个读入线性内存（单文件上限 600 KB），并给 NDSP 通道 1–23 设好格式；通道 0 留给音乐。`audio_sfx(id)` 找一条空闲通道，清掉旧队列，挂上整段 PCM 后立即播放；所有通道都忙时直接丢弃这次请求，不做排队。CSND 回退只支持 BGM，音效静音。
+
+播放点：
+
+- `battle_play`：攻击牌按伤害选 `attack_fast`/`attack_heavy`，能力牌 `buff`；`main.c` 的 `play_card` 成功后 `card_play`、失败 `card_reject`。
+- `damage_enemy_typed` / `damage_player_raw`：实际掉血时 `hit`。
+- `gain_block`：获得格挡时 `block`。
+- `debuff_enemy`：负面状态真的挂上时 `debuff`。
+- `battle_start` / `battle_end_turn` / `win_battle` / 玩家死亡：`battle_start` / `end_turn` / `victory` / `defeat`。
+
+自动测试会打几百张牌，所以 `card_test_run()` 期间用 `audio_sfx_mute(1)` 静音，跑完再打开，避免测试构建一启动就连续响。
+
 ## Azahar 备注
 
 Azahar 的 DSP 是 HLE，不需要真正的 DSP 固件；但 libctru 的 `ndspInit()` 会先找 `/3ds/dspfirm.cdc`，找不到就直接返回 `0xD880A7FA`。由于 Azahar 的 `LoadComponent` 不校验固件内容，可以在模拟器的 SD 卡根目录放一个 4 KB 全零的 `3ds/dspfirm.cdc` 作为占位，让 NDSP 路径跑起来。这个占位文件只适用于 HLE 模拟器，真机必须换成合法固件。
 
 ## 验证
 
-`CARD_TEST` 构建的报告屏会显示一行音频状态，例如：
+`CARD_TEST` 构建的报告屏会显示两行音频状态，例如：
 
 ```
 音乐 act1 3:21 PLAYING NDSP r=22
+音效 17/17 放 0 最近 card_play 已发 3
 ```
 
-`r` 是已经补过的 NDSP 缓冲块数；它随时间增长，说明 DSP 确实在消费流。缺文件时显示 `音乐 act1.pcm 缺失`。
+`r` 是已经补过的 NDSP 缓冲块数；它随时间增长，说明 DSP 确实在消费流。第二条依次是已加载音效数、当前占用通道数、最近播放的 clip、累计播放次数。缺文件时分别显示 `音乐 act1.pcm 缺失`、`音效 0/17`。
+
+截图 `.tmp/shots/1400_sfx_report.png`（17/17、已发 0）和 `1404_sfx_report_played.png`（打出打击后已发 3，最近 `card_play`）是本条路径的证据；Azahar 的 NDSP HLE 不暴露实际发声，能验收的是加载、通道与调用计数。
 
 ## 已知缺口
 
-- 没有音效、没有音量/静音设置、没有淡入淡出。
-- 没有 Boss 曲和菜单曲，只有三幕普通 BGM。
-- CSND 后备一次性占用整首曲目的线性内存。
+- 没有音量/静音设置、没有淡入淡出；音效只在 NDSP 路径可用。
+- 17 个片段中已接 12 个；`ui_click`、`card_select`、`exhaust`、`heal`、`gold` 还没有调用点。
+- 没有 Boss 曲、菜单曲和角色语音，只有三幕普通 BGM。
+- CSND 后备一次性占用整首曲目的线性内存，且不支持音效。
