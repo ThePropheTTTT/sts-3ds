@@ -25,6 +25,16 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 JAR = os.environ.get("STS_JAR", "desktop-1.0.jar")
 CELL = 96
 
+# The gremlin rigs place their attachments relative to the region centre, while
+# every other rig on the page reads as bottom-centre.  Switching the whole page
+# would break the tall robes (the cultist's face sinks into its collar), so the
+# anchor is picked per skeleton instead.  See tools/bake_spine.py bake(anchor=).
+CENTER_ANCHOR = {"angryGremlin", "fatGremlin"}
+
+
+def anchor_for(folder: str) -> str:
+    return "center" if folder.rsplit("/", 1)[-1] in CENTER_ANCHOR else "bottom"
+
 # Order is baked into port/source/main.c; keep both in sync.
 IMAGES = [
     ("球体守卫", "images/monsters/theCity/sphere/sphericGuardian.png"),
@@ -102,7 +112,7 @@ def main() -> int:
 
     pages = {}
     for key, folder in SPINE:
-        im = bake(folder, pages)
+        im = bake(folder, pages, anchor=anchor_for(folder))
         if im is None:
             print(f"{key}: spine bake failed ({folder})")
             continue
@@ -125,7 +135,7 @@ def main() -> int:
             index += 1
 
     for key, folder in SPINE_EXTRA:
-        im = bake(folder, pages)
+        im = bake(folder, pages, anchor=anchor_for(folder))
         if im is None:
             print(f"{key}: spine bake failed ({folder})")
             continue

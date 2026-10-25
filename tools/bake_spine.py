@@ -124,7 +124,7 @@ def _jjs_path():
     return shutil.which("jjs")
 
 
-def _pose_from_runtime(monster_dir, skeleton_bytes, anim=None):
+def _pose_from_runtime(monster_dir, skeleton_bytes, anim=None, anim_time=0.0):
     """Evaluate the setup pose once with the game's Spine runtime.
 
     The hand-rolled matrix walk below ignores IK/path/transform constraints.  That
@@ -144,6 +144,7 @@ def _pose_from_runtime(monster_dir, skeleton_bytes, anim=None):
     digest.update(skeleton_bytes)
     digest.update(os.path.abspath(JAR).encode("utf-8"))
     digest.update((anim or "").encode("utf-8"))
+    digest.update(("%.3f" % anim_time).encode("utf-8"))
     cache_path = os.path.join(cache_dir, digest.hexdigest() + ".json")
     if os.path.exists(cache_path):
         try:
@@ -171,6 +172,7 @@ def _pose_from_runtime(monster_dir, skeleton_bytes, anim=None):
         ]
         if anim:
             cmd.append("-Dspine_anim=" + anim)
+            cmd.append("-Dspine_anim_time=" + ("%.3f" % anim_time))
         cmd.append(script)
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if proc.returncode != 0 or not os.path.exists(tmp_out):
@@ -196,7 +198,7 @@ def _pose_from_runtime(monster_dir, skeleton_bytes, anim=None):
                     pass
 
 
-def bake(monster_dir, page_images, out_size=96, anim=None):
+def bake(monster_dir, page_images, out_size=96, anim=None, anim_time=0.0, anchor="bottom"):
     with zipfile.ZipFile(JAR) as zf:
         names = zf.namelist()
         jsons = [n for n in names if n.startswith(monster_dir + "/") and n.endswith(".json")]
@@ -238,7 +240,7 @@ def bake(monster_dir, page_images, out_size=96, anim=None):
             parent = bone.get("parent")
             world[bone["name"]] = mat_mul(world[parent], local) if parent else local
 
-        pose = _pose_from_runtime(monster_dir, zf.read(jpath), anim)
+        pose = _pose_from_runtime(monster_dir, zf.read(jpath), anim, anim_time)
         if pose:
             world.update(pose)
 
@@ -419,9 +421,12 @@ def bake(monster_dir, page_images, out_size=96, anim=None):
                 piece = piece.rotate(angle, resample=Image.BICUBIC, expand=True)
 
             px, py = mat_apply(m, 0.0, 0.0)
-            # bottom-centre anchor
+            # Spine 2.x region attachments pivot at the region's bottom centre.
+            # STS_REGION_ANCHOR=center is a diagnostic switch for rigs that
+            # look displaced; it is not used by the normal bake.
+            center_anchor = anchor == "center"
             paste_x = int(cx + px - piece.width / 2)
-            paste_y = int(cy - py - piece.height)
+            paste_y = int(cy - py - (piece.height / 2 if center_anchor else piece.height))
             canvas.alpha_composite(piece, (paste_x, paste_y)) if 0 <= paste_x < canvas.width and 0 <= paste_y < canvas.height else None
 
         bbox = canvas.getbbox()
