@@ -340,7 +340,8 @@ static void start_player_turn(void) {
 void battle_start_turn_for_test(void) { start_player_turn(); }
 
 static int enemy_alive(int index) {
-    return index >= 0 && index < g_battle.enemy_count && g_battle.enemies[index].hp > 0;
+    return index >= 0 && index < g_battle.enemy_count &&
+           g_battle.enemies[index].hp > 0 && !g_battle.enemies[index].escaped;
 }
 
 static int alive_count(void) {
@@ -366,6 +367,15 @@ static const EnemyMove SLIME_MOVES[] = {
     {MOVE_ATTACK, 10, 0, 0},   /* Tackle */
     {MOVE_SLIME, 7, 1, 0},     /* Corrosive Spit: 7 damage + a 黏液 */
     {MOVE_WEAK, 1, 0, 0},      /* Lick */
+};
+/* Looter.java: Mug 10, Lunge 12, Smoke Bomb 6 block, then Escape.  Each Mug or
+ * Lunge takes up to 15 gold (ThieveryPower goldAmt); killing it pays that
+ * back, escaping keeps it. */
+static const EnemyMove LOOTER_MOVES[] = {
+    {MOVE_MUG, 10, 0, 0},
+    {MOVE_SMOKE, 6, 0, 0},
+    {MOVE_ESCAPE, 0, 0, 0},
+    {MOVE_MUG, 12, 0, 0},
 };
 static const EnemyMove JAW_WORM_MOVES[] = {
     {MOVE_ATTACK, 11, 0, 0},       /* Chomp */
@@ -751,6 +761,13 @@ static void choose_move_roll(Enemy *e, unsigned int roll) {
         /* Cultist.getMove: the first roll is Incantation, every later one is
          * Dark Strike. */
         e->move_index = e->first_turn ? 0 : 1;
+        return;
+    }
+    if (e->moves == LOOTER_MOVES) {
+        /* Looter.getMove only ever returns Mug.  The Mug/Lunge/Smoke Bomb/Escape
+         * sequence is scripted inside takeTurn, so a fresh enemy starts with
+         * Mug and every later step sets its own move. */
+        e->move_index = 0;
         return;
     }
     if (e->moves == SLIME_MOVES) {
@@ -1536,6 +1553,17 @@ static void setup_act1_gremlin_gang(void) {
     }
 }
 
+/* MonsterHelper "Looter": 44-48 HP, mugs twice and then leaves. */
+static void setup_act1_looter(void) {
+    add_enemy(0, "掠夺者", 44 + (int)(battle_rand() % 5));
+    Enemy *e = &g_battle.enemies[0];
+    e->moves = LOOTER_MOVES;
+    e->move_count = 4;
+    e->last_move = 255;
+    e->last_before = 255;
+    choose_move(e);
+}
+
 /* MonsterHelper "Large Slime": one AcidSlime_L or SpikeSlime_L (65-69 HP). */
 static void setup_act1_large_slime(int spike) {
     add_enemy(0, spike ? "尖刺史莱姆" : "酸液史莱姆", 65 + (int)(battle_rand() % 5));
@@ -1801,6 +1829,12 @@ static void on_enemy_death(int index) {
     e->death_done = 1;
     /* SporeCloudPower.onDeath: the cloud hits the player when the beast dies. */
     if (e->spores > 0) player_gain_vulnerable(e->spores);
+    /* Looter.die(): stolen gold goes back to the player only when the Looter
+     * actually dies; an escape keeps it. */
+    if (e->stolen_gold > 0) {
+        g_map.gold += e->stolen_gold;
+        e->stolen_gold = 0;
+    }
     if (e->stasis_card >= 0) {
         if (g_battle.hand_count < 10) {
             g_battle.hand[g_battle.hand_count++] = e->stasis_card;
@@ -1968,6 +2002,7 @@ int battle_enemy_intent_damage(int index) {
     if (e->hp <= 0 || !e->moves) return 0;
     const EnemyMove *move = &e->moves[e->move_index];
     if (move->kind != MOVE_ATTACK && move->kind != MOVE_ATTACK_BLOCK && move->kind != MOVE_SLIME &&
+        move->kind != MOVE_MUG &&
         move->kind != MOVE_MULTI && move->kind != MOVE_ATTACK_DEBUFF &&
         move->kind != MOVE_HEADBUTT && move->kind != MOVE_SUCK &&
         move->kind != MOVE_ATTACK_WEAK && move->kind != MOVE_WOUND &&
@@ -3610,6 +3645,46 @@ static void enemy_take_turn(int i) {
             e->ritual = (unsigned char)move->value;
             e->ritual_skip = 1;
             break;
+        case MOVE_MUG: {
+            /* ThieveryPower: take up to 15 gold, then hit.  The second Mug is
+             * followed by Smoke Bomb 50% of the time and by a Lunge otherwise;
+             * a Lunge always leads into the Smoke Bomb. */
+            int steal = 15;
+            if (g_map.gold < steal) steal = g_map.gold;
+            if (steal > 0) {
+                g_map.gold -= steal;
+                e->stolen_gold = (short)(e->stolen_gold + steal);
+            }
+            int was_lunge = e->move_index == 3;
+            enemy_hit(e, i, battle_enemy_intent_damage(i));
+            e->mug_count++;
+            e->last_before = e->last_move;
+            e->last_move = e->move_index;
+            e->first_turn = 0;
+            /* A Lunge always pays for itself with the Smoke Bomb; only the
+             * second Mug rolls the 50% chance of leaving straight away. */
+            if (was_lunge) e->move_index = 1;
+            else if (e->mug_count >= 2) e->move_index = (rnd() & 1) ? 1 : 3;
+            else e->move_index = 0;
+            custom_roll = 1;
+            break;
+        }
+        case MOVE_SMOKE:
+            e->block += move->value;
+            e->last_before = e->last_move;
+            e->last_move = e->move_index;
+            e->first_turn = 0;
+            e->move_index = 2;
+            custom_roll = 1;
+            break;
+        case MOVE_ESCAPE:
+            /* EscapeAction: the Looter leaves with whatever it has stolen. */
+            e->escaped = 1;
+            e->hp = 0;
+            e->stolen_gold = 0;
+            e->block = 0;
+            custom_roll = 1;
+            break;
         default:
             break;
         }
@@ -3663,6 +3738,13 @@ void battle_end_turn(void) {
         g_battle.phase = PHASE_LOSE;
         g_run.screen = SCREEN_DEFEAT;
         audio_sfx(AUDIO_SFX_DEFEAT);
+        return;
+    }
+    /* A Looter that finished its Escape can leave the room empty without any
+     * card having killed it; end the fight here instead of starting a turn
+     * against nobody. */
+    if (alive_count() == 0) {
+        win_battle();
         return;
     }
     end_of_round_ritual();
@@ -3818,6 +3900,10 @@ void battle_test_spawn_act1(int which) {
         g_map.row = 4;
         g_battle.enemy_count = 1;
         setup_act1_large_slime(1);
+    } else if (which == 18) {
+        g_map.row = 5;
+        g_battle.enemy_count = 1;
+        setup_act1_looter();
     } else {
         g_map.row = 3;
         setup_encounter(NODE_MONSTER);

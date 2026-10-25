@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Bake the monster sprites the port uses into one 1024x512 page.
+"""Bake the monster sprites the port uses into one 1024x1024 page.
 
 Some monsters ship as a single PNG; the rest (every Act 1 small monster) only
 exist as Spine skeletons, so they are flattened to a static pose first by
-tools/bake_spine.py and then packed here.  Eight 96px columns x four rows
+tools/bake_spine.py and then packed here.  Eight 96px columns x eight rows
 hold 32 sprites; the free cells leave room for the next act's monsters.
 
     python tools/extract_monsters.py    -> assets/monsters.png (1024x512, 8x4 cells)
@@ -75,14 +75,16 @@ EXTRA_IMAGES = [
 SPINE_EXTRA = [
     ("虱虫", "images/monsters/theBottom/louseGreen"),
     # The small slimes reuse the medium slime's display name, so the sprite
-    # key lives on Enemy.art and these two cells complete the 32-cell page.
+    # key lives on Enemy.art; the Looter and Mugger have no single-image art of
+    # their own either, so each needs a Spine bake here.
     ("小酸液史莱姆", "images/monsters/theBottom/slimeS"),
     ("小尖刺史莱姆", "images/monsters/theBottom/slimeAltS"),
+    ("掠夺者", "images/monsters/theBottom/looter"),
 ]
 
 
 def main() -> int:
-    page = Image.new("RGBA", (1024, 512), (0, 0, 0, 0))  # power-of-two: 3DS textures need it
+    page = Image.new("RGBA", (1024, 1024), (0, 0, 0, 0))  # power-of-two: 3DS textures need it
     index = 0
 
     with zipfile.ZipFile(JAR) as zf:

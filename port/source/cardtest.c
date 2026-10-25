@@ -2877,7 +2877,7 @@ void card_test_demo_fight(int which) {
      * 21 the Cultist, 22 two Louses, 23 three Louses.
      * Same spawn path the real encounter uses, then a hand so the bottom
      * screen has cards to draw. */
-    if (which < 0 || which > 32) which = 0;
+    if (which < 0 || which > 33) which = 0;
     if (which == 10) battle_test_spawn_act2(1);
     else if (which == 11) battle_test_spawn_act1(0);
     else if (which == 12) battle_test_spawn_act1(1);
@@ -2900,6 +2900,7 @@ void card_test_demo_fight(int which) {
     else if (which == 30) battle_test_spawn_act1(15);  /* Gremlin Gang */
     else if (which == 31) battle_test_spawn_act1(16);  /* AcidSlime_L */
     else if (which == 32) battle_test_spawn_act1(17);  /* SpikeSlime_L */
+    else if (which == 33) battle_test_spawn_act1(18);  /* Looter */
     else if (which == 6) battle_test_spawn_slavers();
     else if (which == 7) {
         battle_test_spawn_automaton();
@@ -3688,6 +3689,63 @@ static void test_large_slime(void) {
     check("large spike demo", g_battle.enemies[0].max_hp >= 65, 1);
 }
 
+static void test_looter(void) {
+    /* Looter: HP 44-48, Mug 10 / Lunge 12 stealing 15 gold, Smoke Bomb then
+     * Escape.  The gold comes back only if it dies. */
+    battle_test_spawn_act1(18);
+    Enemy *e = &g_battle.enemies[0];
+    check("looter hp", e->max_hp >= 44 && e->max_hp <= 48, 1);
+    check("looter name", strcmp(e->name, "掠夺者"), 0);
+    check("looter moves", e->move_count, 4);
+    check("looter opens with mug", e->moves[e->move_index].kind, MOVE_MUG);
+    check("looter mug damage", e->moves[e->move_index].value, 10);
+
+    g_map.gold = 99;
+    battle_test_enemy_turn(0);
+    check("looter takes gold", g_map.gold, 84);
+    check("looter keeps gold", e->stolen_gold, 15);
+    check("looter mug hits", g_battle.hp, 70);
+    check("looter mugs again", e->moves[e->move_index].kind, MOVE_MUG);
+    check("looter mug again damage", e->moves[e->move_index].value, 10);
+    battle_test_enemy_turn(0);
+    check("looter takes more gold", g_map.gold, 69);
+    check("looter hoard", e->stolen_gold, 30);
+    /* After the second Mug it either lunges (12 damage, another 15 gold) or
+     * throws the smoke bomb straight away. */
+    int next = e->moves[e->move_index].kind;
+    check("looter prepares to leave", next == MOVE_MUG || next == MOVE_SMOKE, 1);
+    if (next == MOVE_MUG) {
+        check("looter lunge damage", e->moves[e->move_index].value, 12);
+        battle_test_enemy_turn(0);
+        check("looter lunge takes gold", g_map.gold, 54);
+        check("looter lunge hoard", e->stolen_gold, 45);
+        check("looter lunge leads to smoke", e->moves[e->move_index].kind, MOVE_SMOKE);
+    }
+    int gold_before_escape = g_map.gold;
+    battle_test_enemy_turn(0);
+    check("looter smoke block", e->block >= 6, 1);
+    check("looter escape intent", e->moves[e->move_index].kind, MOVE_ESCAPE);
+    battle_test_enemy_turn(0);
+    check("looter escaped", e->escaped, 1);
+    check("looter gone", e->hp, 0);
+    check("looter keeps stolen gold", g_map.gold, gold_before_escape);
+
+    /* Dying pays the stolen gold back. */
+    battle_test_spawn_act1(18);
+    e = &g_battle.enemies[0];
+    g_map.gold = 99;
+    battle_test_enemy_turn(0);
+    check("looter death test gold", g_map.gold, 84);
+    battle_test_damage_enemy(0, 99);
+    check("looter refunds on death", g_map.gold, 99);
+    check("looter dead", e->hp, 0);
+
+    /* The report screen's Looter demo. */
+    card_test_demo_fight(33);
+    check("looter demo alive", g_battle.enemies[0].hp > 0, 1);
+    check("looter demo name", strcmp(g_battle.enemies[0].name, "掠夺者"), 0);
+}
+
 void card_test_run(void) {
     s_cases = 0;
     s_fails = 0;
@@ -3717,6 +3775,7 @@ void card_test_run(void) {
     test_fungi();
     test_gremlin_gang();
     test_large_slime();
+    test_looter();
     g_run.screen = SCREEN_MAP;
     audio_sfx_mute(0);
 }

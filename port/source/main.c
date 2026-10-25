@@ -50,12 +50,12 @@ static C2D_SpriteSheet s_act_sheets[3];
 static C2D_Image s_act_img[3];
 static C2D_SpriteSheet s_mon_sheet;
 static C2D_SpriteSheet s_mon_sheet_ref;
-static C2D_Image s_mon_img[32];
-static Tex3DS_SubTexture s_mon_subs[32];
+static C2D_Image s_mon_img[33];
+static Tex3DS_SubTexture s_mon_subs[33];
 
-/* 1024x512 page produced by tools/extract_monsters.py (8x4 cells of 96px).
+/* 1024x1024 page produced by tools/extract_monsters.py (8x8 cells of 96px).
  * NULL means the bake did not look right yet, so the placeholder box is used. */
-static const char *MON_KEYS[32] = {
+static const char *MON_KEYS[33] = {
     "球体守卫", "史莱姆老大", "勇者", "酸液史莱姆",
     "尖刺史莱姆", "颚虫", "地精大块头", "红虱虫",
     "真菌怪", "邪教徒", "寄生兽", "异鸟",
@@ -64,11 +64,11 @@ static const char *MON_KEYS[32] = {
     "铜制机械人偶", "收藏家", "火炬头",
     "地精首领", "火大地精", "卑鄙地精", "胖地精", "持盾地精", "地精法师",
     "铜球", "虱虫",
-    "小酸液史莱姆", "小尖刺史莱姆",
+    "小酸液史莱姆", "小尖刺史莱姆", "掠夺者",
 };
 
 static int monster_slot(const char *name) {
-    for (int i = 0; i < 32; i++) {
+    for (int i = 0; i < 33; i++) {
         if (MON_KEYS[i] && strcmp(name, MON_KEYS[i]) == 0) return i;
     }
     return -1;
@@ -468,7 +468,7 @@ static void load_art(void) {
     if (s_mon_sheet) {
         C2D_Image img = C2D_SpriteSheetGetImage(s_mon_sheet, 0);
         s_vis_tex = s_vis_tex ? s_vis_tex : img.tex;
-        for (int i = 0; i < 32; i++) {
+        for (int i = 0; i < 33; i++) {
             C2D_Image one = {img.tex, NULL};
             Tex3DS_SubTexture *sub = &s_mon_subs[i];
             float x = (float)((i % 8) * 96);
@@ -477,8 +477,8 @@ static void load_art(void) {
             sub->height = 96;
             sub->left = x / 1024.0f;
             sub->right = (x + 96.0f) / 1024.0f;
-            sub->top = 1.0f - y / 512.0f;
-            sub->bottom = 1.0f - (y + 96.0f) / 512.0f;
+            sub->top = 1.0f - y / 1024.0f;
+            sub->bottom = 1.0f - (y + 96.0f) / 1024.0f;
             s_mon_img[i].tex = img.tex;
             s_mon_img[i].subtex = sub;
             (void)one;
@@ -2366,6 +2366,19 @@ static void draw_fight_top(void) {
             snprintf(intent, sizeof(intent), "仪式 %d", value);
             intent_color = RGB(200, 180, 120);
             break;
+        case MOVE_MUG:
+            /* Looter: an attack intent that also reads how much gold it takes. */
+            snprintf(intent, sizeof(intent), "攻击 %d 偷 15", battle_enemy_intent_damage(i));
+            intent_color = RGB(230, 200, 120);
+            break;
+        case MOVE_SMOKE:
+            snprintf(intent, sizeof(intent), "格挡 %d", value);
+            intent_color = RGB(180, 200, 230);
+            break;
+        case MOVE_ESCAPE:
+            snprintf(intent, sizeof(intent), "逃跑");
+            intent_color = RGB(200, 200, 200);
+            break;
         default:
             intent[0] = 0;
             break;
@@ -2376,7 +2389,7 @@ static void draw_fight_top(void) {
                 kind == MOVE_ATTACK_DEBUFF || (kind == MOVE_SLIME && value > 0) ||
                 kind == MOVE_ATTACK_WEAK ||
                 kind == MOVE_WOUND || kind == MOVE_BLOCK_ATTACK || kind == MOVE_HEADBUTT ||
-                kind == MOVE_SUCK) {
+                kind == MOVE_SUCK || kind == MOVE_MUG) {
                 int dmg = battle_enemy_intent_damage(i);
                 icon = dmg <= 4 ? 0 : (dmg <= 9 ? 1 : (dmg <= 14 ? 2 : 3));
             } else if (kind == MOVE_BUFF || kind == MOVE_ANGER || kind == MOVE_FLY ||
@@ -2385,6 +2398,7 @@ static void draw_fight_top(void) {
                        kind == MOVE_RITUAL) {
                 icon = 5;
             } else if (kind == MOVE_DEFEND || kind == MOVE_DEFEND_BUFF ||
+                       kind == MOVE_SMOKE ||
                        kind == MOVE_SUPPORT || kind == MOVE_RALLY ||
                        kind == MOVE_PROTECT) {
                 icon = 4;
@@ -4059,7 +4073,7 @@ int main(int argc, char **argv) {
                 card_test_demo_fight(s_boss_demo);
                 s_boss_demo++;
                 if (s_boss_demo == 16 || s_boss_demo == 17) s_boss_demo = 18;
-                if (s_boss_demo > 32) s_boss_demo = 7;
+                if (s_boss_demo > 33) s_boss_demo = 7;
             }
         }
         update_play_fx();

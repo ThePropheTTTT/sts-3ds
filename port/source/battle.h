@@ -65,6 +65,9 @@ enum {
     MOVE_FRAIL,          /* value = Frail on the player, no damage */
     MOVE_RITUAL,         /* Cultist Incantation: value = Ritual stacks (Strength
                           * gained at the end of every later round) */
+    MOVE_MUG,            /* Looter: value = damage, also steals 15 gold */
+    MOVE_SMOKE,          /* Looter Smoke Bomb: value = block, then it escapes */
+    MOVE_ESCAPE,         /* Looter: leaves the fight with the stolen gold */
 };
 
 /* Act 2 uses the same room chances as Act 1 (TheCity.java), so only the
@@ -119,6 +122,9 @@ typedef struct {
     unsigned char curl_up;       /* CurlUpPower block, gained the first time it is hit */
     unsigned char curl_done;     /* CurlUpPower: the one gain has fired */
     unsigned char spores;        /* SporeCloudPower: Vulnerable handed to the player on death */
+    unsigned char escaped;       /* Looter: left the fight; counts as gone */
+    unsigned char mug_count;     /* Looter: Mugs and Lunges so far */
+    short stolen_gold;           /* Looter: gold taken, paid back only if it dies */
 
     unsigned char death_done;    /* on_death has already run for this enemy */
     unsigned char draw_w;        /* custom hitbox width, 0 = use the old layout */
