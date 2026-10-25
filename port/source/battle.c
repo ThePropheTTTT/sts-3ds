@@ -1329,7 +1329,7 @@ static void setup_act2_collector(void) {
 /* One Gremlin from SummonGremlinAction's weighted pool.  which == -1 rolls
  * the pool (Warrior/Thief/Fat twice, Tsundere and Wizard once each). */
 static void spawn_gremlin_minion(int leader, int slot, int which) {
-    if (slot < 1 || slot > 3) return;
+    if (slot < 0 || slot > 3) return;
     if (which < 0) {
         static const signed char pool[8] = {0, 0, 1, 1, 2, 2, 3, 4};
         which = pool[rnd() % 8];
@@ -1351,9 +1351,11 @@ static void spawn_gremlin_minion(int leader, int slot, int which) {
     e->moves = moves;
     e->move_count = move_count;
     e->minion_owner = (signed char)leader;
-    e->draw_x = (short)(120 + (slot - 1) * 68);
-    e->draw_w = 54;
-    e->first_turn = 0;
+    if (leader >= 0) {
+        e->draw_x = (short)(120 + (slot - 1) * 68);
+        e->draw_w = 54;
+        e->first_turn = 0;
+    }
     e->last_move = 255;
     e->last_before = 255;
     if (which == 4) e->ai_turn = 1;   /* GremlinWizard.currentCharge starts at 1 */
@@ -1519,6 +1521,32 @@ static void setup_act1_small_slimes(void) {
 
 /* FungiBeast.java: "2 Fungi Beasts" from the strong pool.  Each one carries a
  * Spore Cloud that hands the player 2 Vulnerable when it dies. */
+/* MonsterHelper.spawnGremlins: four different Gremlins.  Each pick is removed
+ * from the weighted pool, so no type can appear twice in one gang. */
+static void setup_act1_gremlin_gang(void) {
+    signed char pool[8] = {0, 0, 1, 1, 2, 2, 3, 4};
+    int left = 8;
+    g_battle.enemy_count = 4;
+    for (int i = 0; i < 4; i++) {
+        int index = (int)(rnd() % (unsigned)left);
+        signed char pick = pool[index];
+        for (int k = index; k + 1 < left; k++) pool[k] = pool[k + 1];
+        left--;
+        spawn_gremlin_minion(-1, i, pick);
+    }
+}
+
+/* MonsterHelper "Large Slime": one AcidSlime_L or SpikeSlime_L (65-69 HP). */
+static void setup_act1_large_slime(int spike) {
+    add_enemy(0, spike ? "尖刺史莱姆" : "酸液史莱姆", 65 + (int)(battle_rand() % 5));
+    Enemy *e = &g_battle.enemies[0];
+    e->moves = spike ? SPIKE_L_MOVES : ACID_L_MOVES;
+    e->move_count = spike ? 2 : 3;
+    e->last_move = 255;
+    e->last_before = 255;
+    choose_move(e);
+}
+
 static void setup_act1_fungi(int slot) {
     add_enemy(slot, "真菌怪", 22 + (int)(battle_rand() % 7));
     Enemy *e = &g_battle.enemies[slot];
@@ -1865,8 +1893,11 @@ static int damage_enemy_typed(int index, int amount, int thorns) {
          * attack damage (blocked hits and THORNS do not count). */
         if (!thorns && e->moves == GREMLIN_WARRIOR_MOVES) e->strength++;
     }
-    if (e->moves == BOSS_MOVES && e->hp > 0 && !e->split_done &&
-        e->hp * 2 <= e->max_hp) {
+    /* SlimeBoss, AcidSlime_L and SpikeSlime_L all split at half HP; the last
+     * two show a SPLIT intent in the game, but this port resolves it right
+     * away like the boss's existing interrupt. */
+    if (e->hp > 0 && !e->split_done && e->hp * 2 <= e->max_hp &&
+        (e->moves == BOSS_MOVES || e->moves == ACID_L_MOVES || e->moves == SPIKE_L_MOVES)) {
         g_battle.pending_split = index;
     }
     return lost;
@@ -1981,25 +2012,50 @@ static void resolve_pending_split(void) {
     if (index < 0 || index >= g_battle.enemy_count) return;
 
     Enemy *boss = &g_battle.enemies[index];
-    if (boss->hp <= 0 || boss->moves != BOSS_MOVES || boss->split_done) return;
+    if (boss->hp <= 0 || boss->split_done) return;
+    int kind = boss->moves == BOSS_MOVES ? 0 : (boss->moves == ACID_L_MOVES ? 1 : (boss->moves == SPIKE_L_MOVES ? 2 : -1));
+    if (kind < 0) return;
     boss->split_done = 1;
 
     int hp_now = boss->hp;
-    add_enemy(0, "尖刺史莱姆", hp_now);
-    add_enemy(1, "酸液史莱姆", hp_now);
-    Enemy *spike = &g_battle.enemies[0];
-    Enemy *acid = &g_battle.enemies[1];
-    spike->moves = SPIKE_L_MOVES;
-    spike->move_count = 2;
-    spike->last_move = 255;
-    spike->last_before = 255;
-    acid->moves = ACID_L_MOVES;
-    acid->move_count = 3;
-    acid->last_move = 255;
-    acid->last_before = 255;
-    g_battle.enemy_count = 2;
-    choose_move(spike);
-    choose_move(acid);
+    if (kind == 0) {
+        add_enemy(0, "尖刺史莱姆", hp_now);
+        add_enemy(1, "酸液史莱姆", hp_now);
+        Enemy *spike = &g_battle.enemies[0];
+        Enemy *acid = &g_battle.enemies[1];
+        spike->moves = SPIKE_L_MOVES;
+        spike->move_count = 2;
+        spike->last_move = 255;
+        spike->last_before = 255;
+        acid->moves = ACID_L_MOVES;
+        acid->move_count = 3;
+        acid->last_move = 255;
+        acid->last_before = 255;
+        g_battle.enemy_count = 2;
+        choose_move(spike);
+        choose_move(acid);
+        return;
+    }
+
+    /* AcidSlime_L / SpikeSlime_L: two medium slimes of the same colour, each
+     * with the HP the large one had left (AcidSlime_L.java:128-129). */
+    int slot_b = -1;
+    for (int s = 0; s < 4; s++) {
+        if (s == index) continue;
+        if (s >= g_battle.enemy_count || g_battle.enemies[s].hp <= 0) { slot_b = s; break; }
+    }
+    if (slot_b < 0) return;   /* room is full: keep the large one in place. */
+    int slots[2] = {index, slot_b};
+    for (int k = 0; k < 2; k++) {
+        add_enemy(slots[k], kind == 1 ? "酸液史莱姆" : "尖刺史莱姆", hp_now);
+        Enemy *e = &g_battle.enemies[slots[k]];
+        e->moves = kind == 1 ? SLIME_MOVES : SPIKE_M_MOVES;
+        e->move_count = kind == 1 ? 3 : 2;
+        e->last_move = 255;
+        e->last_before = 255;
+        choose_move(e);
+    }
+    if (slot_b + 1 > g_battle.enemy_count) g_battle.enemy_count = slot_b + 1;
 }
 
 /* MagnetismPower.atStartOfTurn: MakeTempCardInHandAction with a random
@@ -3751,10 +3807,32 @@ void battle_test_spawn_act1(int which) {
     } else if (which == 14) {
         g_map.row = 3;
         setup_act1_fungi_beasts();
+    } else if (which == 15) {
+        g_map.row = 3;
+        setup_act1_gremlin_gang();
+    } else if (which == 16) {
+        g_map.row = 4;
+        g_battle.enemy_count = 1;
+        setup_act1_large_slime(0);
+    } else if (which == 17) {
+        g_map.row = 4;
+        g_battle.enemy_count = 1;
+        setup_act1_large_slime(1);
     } else {
         g_map.row = 3;
         setup_encounter(NODE_MONSTER);
     }
+}
+
+void battle_test_split(void) {
+    if (g_battle.enemy_count < 1) return;
+    Enemy *e = &g_battle.enemies[0];
+    if (e->moves != ACID_L_MOVES && e->moves != SPIKE_L_MOVES) return;
+    e->hp = e->max_hp / 2;
+    e->split_done = 0;
+    g_battle.pending_split = -1;
+    (void)damage_enemy_typed(0, 1, 0);
+    resolve_pending_split();
 }
 
 void battle_test_split_boss(void) {

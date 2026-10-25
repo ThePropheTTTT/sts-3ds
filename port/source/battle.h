@@ -328,6 +328,7 @@ void battle_test_spawn_act2_monster(int which);
 void battle_test_spawn_act1(int which);
 /* Drops the Slime Boss to half HP and resolves the split. */
 void battle_test_split_boss(void);
+void battle_test_split(void);
 void battle_test_choose_roll(int index, unsigned int roll);
 void battle_test_enemy_turn(int index);
 void battle_test_end_of_round(void);

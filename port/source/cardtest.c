@@ -2877,7 +2877,7 @@ void card_test_demo_fight(int which) {
      * 21 the Cultist, 22 two Louses, 23 three Louses.
      * Same spawn path the real encounter uses, then a hand so the bottom
      * screen has cards to draw. */
-    if (which < 0 || which > 29) which = 0;
+    if (which < 0 || which > 32) which = 0;
     if (which == 10) battle_test_spawn_act2(1);
     else if (which == 11) battle_test_spawn_act1(0);
     else if (which == 12) battle_test_spawn_act1(1);
@@ -2897,6 +2897,9 @@ void card_test_demo_fight(int which) {
     else if (which == 27) battle_test_spawn_act1(11);  /* SpikeSlime_S */
     else if (which == 28) battle_test_spawn_act1(14);  /* two Fungi Beasts */
     else if (which == 29) battle_test_spawn_act1(13);  /* one Fungi Beast */
+    else if (which == 30) battle_test_spawn_act1(15);  /* Gremlin Gang */
+    else if (which == 31) battle_test_spawn_act1(16);  /* AcidSlime_L */
+    else if (which == 32) battle_test_spawn_act1(17);  /* SpikeSlime_L */
     else if (which == 6) battle_test_spawn_slavers();
     else if (which == 7) {
         battle_test_spawn_automaton();
@@ -3586,6 +3589,105 @@ static void test_fungi(void) {
     check("fungi solo demo alive", g_battle.enemies[0].hp > 0, 1);
 }
 
+static void test_gremlin_gang(void) {
+    /* MonsterHelper.spawnGremlins: four distinct Gremlins from the weighted pool. */
+    battle_test_spawn_act1(15);
+    check("gang count", g_battle.enemy_count, 4);
+    int seen[5] = {0, 0, 0, 0, 0};
+    for (int i = 0; i < 4; i++) {
+        Enemy *e = &g_battle.enemies[i];
+        int kind = -1;
+        if (strcmp(e->name, "火大地精") == 0) kind = 0;
+        else if (strcmp(e->name, "卑鄙地精") == 0) kind = 1;
+        else if (strcmp(e->name, "胖地精") == 0) kind = 2;
+        else if (strcmp(e->name, "持盾地精") == 0) kind = 3;
+        else if (strcmp(e->name, "地精法师") == 0) kind = 4;
+        check("gang gremlin known", kind >= 0, 1);
+        if (kind >= 0) seen[kind]++;
+        check("gang gremlin alive", e->hp > 0 && e->hp <= e->max_hp, 1);
+        check("gang not a minion", e->minion_owner, -1);
+        check("gang knows one move", e->moves != 0, 1);
+        check("gang gremlin reachable", e->hp >= 10, 1);
+    }
+    /* The weighted pool holds two Warriors, two Thieves and two Fat Gremlins
+     * but only one Tsundere and one Wizard, so those two can never repeat. */
+    check("gang warriors at most two", seen[0] <= 2, 1);
+    check("gang thieves at most two", seen[1] <= 2, 1);
+    check("gang fats at most two", seen[2] <= 2, 1);
+    check("gang one tsundere", seen[3] <= 1, 1);
+    check("gang one wizard", seen[4] <= 1, 1);
+    /* The warrior, thief and fat Gremlin each carry one move; the shield
+     * bearer opens with Protect and the wizard charges first. */
+    for (int i = 0; i < 4; i++) {
+        Enemy *e = &g_battle.enemies[i];
+        unsigned char kind = e->moves[e->move_index].kind;
+        if (strcmp(e->name, "持盾地精") == 0) check("tsundere protects", kind, MOVE_PROTECT);
+        if (strcmp(e->name, "地精法师") == 0) check("wizard charges", kind, MOVE_CHARGE);
+        if (strcmp(e->name, "火大地精") == 0) check("warrior swings", kind, MOVE_ATTACK);
+        if (strcmp(e->name, "卑鄙地精") == 0) check("thief swings", kind, MOVE_ATTACK);
+        if (strcmp(e->name, "胖地精") == 0) check("fat gremlin swings", kind, MOVE_ATTACK);
+    }
+    /* The gang demo on the report screen. */
+    card_test_demo_fight(30);
+    check("gang demo count", g_battle.enemy_count, 4);
+}
+
+static void test_large_slime(void) {
+    /* AcidSlime_L: HP 65-69, Wound Tackle 11 + 2 黏液, Tackle 16, Lick 2. */
+    battle_test_spawn_act1(16);
+    Enemy *e = &g_battle.enemies[0];
+    check("large acid hp", e->max_hp >= 65 && e->max_hp <= 69, 1);
+    check("large acid name", strcmp(e->name, "酸液史莱姆"), 0);
+    check("large acid moves", e->move_count, 3);
+    int first = e->moves[e->move_index].kind;
+    check("large acid opens legally",
+          first == MOVE_SLIME || first == MOVE_ATTACK || first == MOVE_WEAK, 1);
+    /* Above half HP it never splits. */
+    battle_test_damage_enemy(0, 5);
+    check("large acid stays whole", g_battle.enemy_count, 1);
+    check("large acid keeps its three moves", e->move_count, 3);
+
+    /* At half HP it splits into two medium Acid Slimes carrying the HP left. */
+    int remain;
+    battle_test_spawn_act1(16);
+    e = &g_battle.enemies[0];
+    remain = e->max_hp / 2 - 1;   /* the split helper deals one more damage */
+    battle_test_split();
+    check("large acid split count", g_battle.enemy_count, 2);
+    check("large acid split left name", strcmp(g_battle.enemies[0].name, "酸液史莱姆"), 0);
+    check("large acid split right name", strcmp(g_battle.enemies[1].name, "酸液史莱姆"), 0);
+    check("large acid split left hp", g_battle.enemies[0].hp, remain);
+    check("large acid split right hp", g_battle.enemies[1].hp, remain);
+    check("large acid split left max", g_battle.enemies[0].max_hp, remain);
+    check("large acid split medium moves", g_battle.enemies[0].move_count, 3);
+    check("large acid split intent ok",
+          g_battle.enemies[1].moves[g_battle.enemies[1].move_index].kind == MOVE_SLIME ||
+          g_battle.enemies[1].moves[g_battle.enemies[1].move_index].kind == MOVE_ATTACK ||
+          g_battle.enemies[1].moves[g_battle.enemies[1].move_index].kind == MOVE_WEAK, 1);
+
+    /* SpikeSlime_L: HP 65-69, Flame Tackle 16 + 2 黏液 or Frail Lick 2. */
+    battle_test_spawn_act1(17);
+    e = &g_battle.enemies[0];
+    check("large spike hp", e->max_hp >= 65 && e->max_hp <= 69, 1);
+    check("large spike name", strcmp(e->name, "尖刺史莱姆"), 0);
+    check("large spike moves", e->move_count, 2);
+    check("large spike opens legally",
+          e->moves[e->move_index].kind == MOVE_SLIME || e->moves[e->move_index].kind == MOVE_FRAIL, 1);
+    battle_test_split();
+    check("large spike split count", g_battle.enemy_count, 2);
+    check("large spike split name", strcmp(g_battle.enemies[1].name, "尖刺史莱姆"), 0);
+    check("large spike split moves", g_battle.enemies[1].move_count, 2);
+    check("large spike split intent ok",
+          g_battle.enemies[1].moves[g_battle.enemies[1].move_index].kind == MOVE_SLIME ||
+          g_battle.enemies[1].moves[g_battle.enemies[1].move_index].kind == MOVE_FRAIL, 1);
+
+    /* The report screen's large slime demos. */
+    card_test_demo_fight(31);
+    check("large acid demo", g_battle.enemies[0].max_hp >= 65, 1);
+    card_test_demo_fight(32);
+    check("large spike demo", g_battle.enemies[0].max_hp >= 65, 1);
+}
+
 void card_test_run(void) {
     s_cases = 0;
     s_fails = 0;
@@ -3613,6 +3715,8 @@ void card_test_run(void) {
     test_louse();
     test_slimes();
     test_fungi();
+    test_gremlin_gang();
+    test_large_slime();
     g_run.screen = SCREEN_MAP;
     audio_sfx_mute(0);
 }
