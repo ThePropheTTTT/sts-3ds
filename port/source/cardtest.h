@@ -15,5 +15,7 @@ void card_test_demo_pick(int which);
  * intents and power icons can be screenshotted. */
 void card_test_demo_fight(int which);
 void card_test_demo_event(int which);
+/* 0 upgrade, 1 reward, 2 campfire, 3 True Grit+ picker. */
+void card_test_demo_ui(int which);
 void card_test_demo_exit(void);
 #endif

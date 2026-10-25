@@ -37,6 +37,9 @@ LIBS="-lcitro2d -lcitro3d -lctru -lm"
 EXTRA_OBJS=""
 if [ "${CARD_TEST:-0}" = "1" ]; then
     CFLAGS="$CFLAGS -DCARD_TEST"
+    if [ -n "${UI_DEMO:-}" ]; then
+        CFLAGS="$CFLAGS -DUI_DEMO=$UI_DEMO"
+    fi
     TARGET=sts3ds_test
     EXTRA_OBJS="build/cardtest.o"
 fi

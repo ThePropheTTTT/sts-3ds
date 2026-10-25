@@ -160,8 +160,9 @@ static int card_magic(const CardDef *c, int up) { return c->magic + (up ? c->up_
 /* The cost the card shows right now.  BloodForBlood.java drops its cost by 1
  * for every HP-loss event this combat (tookDamage -> updateCost(-1), floor 0);
  * the extracted table only has the base 4. */
-int battle_cost_of(const CardDef *c) {
+int battle_cost_of(const CardDef *c, int up) {
     if (!c) return 0;
+    int base = up ? c->cost_up : c->cost;
     /* Cost made free for the rest of the combat by Discovery, Madness,
      * Chrysalis, Metamorphosis or Infernal Blade.  Vanilla scopes some of
      * these to "this turn"; the port scopes all of them to the combat. */
@@ -178,19 +179,19 @@ int battle_cost_of(const CardDef *c) {
          * 1; the upgraded version also changes cost for the rest of combat. */
         if (index >= 0 && index < 160 &&
             (g_battle.cost_one_turn[index] || g_battle.cost_one_combat[index]) &&
-            c->cost > 1) return 1;
+            base > 1) return 1;
     }
     if (strcmp(c->id, "Blood for Blood") == 0) {
-        int cost = c->cost - g_battle.damaged;
+        int cost = base - g_battle.damaged;
         return cost < 0 ? 0 : cost;
     }
-    return c->cost;
+    return base;
 }
 
 int battle_card_cost(int slot) {
     const CardDef *c = battle_card(slot);
-    if (!c || c->cost < 0) return -1;
-    return battle_cost_of(c);
+    if (!c || (battle_hand_up(slot) ? c->cost_up : c->cost) < 0) return -1;
+    return battle_cost_of(c, battle_hand_up(slot));
 }
 
 int battle_card_targeted(int slot) {
@@ -1495,6 +1496,7 @@ static void roll_rewards(void) {
 
 void run_start(void) {
     memset(&g_run, 0, sizeof(g_run));
+    g_run.potion_gain = -1;
     g_run.act = 1;
     g_run.card_blizz = 5;   /* AbstractDungeon.cardBlizzStartOffset */
     memset(&g_battle, 0, sizeof(g_battle));
@@ -1919,7 +1921,13 @@ static void win_battle(void) {
     if (g_battle.phase == PHASE_WIN) return;   /* a nested play already won */
     g_battle.phase = PHASE_WIN;
     audio_sfx(AUDIO_SFX_VICTORY);
-    if ((rnd() % 100) < 35) battle_add_random_potion();
+    /* 40% potion drop.  The reward screen shows what was rolled; a full
+     * belt keeps the roll as "inventory full" instead of silently losing it. */
+    g_run.potion_gain = -1;
+    if ((rnd() % 100) < 40) {
+        int id = (int)(rnd() % POTION_COUNT);
+        g_run.potion_gain = battle_add_potion(id) ? id : -2;
+    }
     if (battle_has_relic(RELIC_BURNING_BLOOD)) {
         g_battle.hp += 6;
         if (g_battle.hp > g_battle.max_hp) g_battle.hp = g_battle.max_hp;
@@ -2312,7 +2320,7 @@ int battle_play(int slot, int target) {
     int magic = card_magic(c, up);
     /* battle_cost_of already handles Blood for Blood's discount and every
      * zero-cost effect; using c->cost here used to ignore all of them. */
-    int cost = battle_cost_of(c);
+    int cost = battle_cost_of(c, up);
     /* CorruptionPower: every Skill costs 0 (they also exhaust, below). */
     if (pw(POW_CORRUPTION) && c->type == 1 && cost >= 0) cost = 0;
     int x_cost = 0;
@@ -2637,12 +2645,22 @@ int battle_play(int slot, int target) {
             g_battle.draw[g_battle.draw_count++] = card;
         }
     }
-    if (strcmp(c->id, "True Grit") == 0 && g_battle.hand_count > 1) {
-        int victim = (int)(rnd() % (unsigned int)g_battle.hand_count);
-        if (victim != slot) {
-            for (int i = victim; i < g_battle.hand_count - 1; i++) g_battle.hand[i] = g_battle.hand[i + 1];
-            g_battle.hand_count--;
-        }
+    if (strcmp(c->id, "True Grit") == 0 && !up && g_battle.hand_count > 1) {
+        /* TrueGrit.java: ExhaustAction(1, true, false, false) picks a random
+         * card *other than* the one being played.  Drawing over hand_count
+         * used to be able to land on the played card itself, which silently
+         * exhausted nothing. */
+        int pick = (int)(rnd() % (unsigned int)(g_battle.hand_count - 1));
+        int victim = pick >= slot ? pick + 1 : pick;
+        int entry = g_battle.hand[victim];
+        hand_remove(victim);
+        exhaust_card(entry);   /* ExhaustAction, not a silent discard */
+        /* ExhaustAction runs before the card leaves the hand.  Removing a
+         * card to the left shifts every slot above it down, so the played
+         * True Grit is no longer at `slot`: adjust it or the played-card
+         * removal below discards a different card and leaves True Grit in
+         * hand. */
+        if (victim < slot) slot--;
     }
 
     /* PanachePower.onUseCard counts every card played; the card that puts
@@ -2718,6 +2736,8 @@ int battle_play(int slot, int target) {
         }
     } else if (strcmp(c->id, "Burning Pact") == 0) {
         open_pick(PICK_EXHAUST_HAND, magic);
+    } else if (strcmp(c->id, "True Grit") == 0) {
+        if (up) open_pick(PICK_EXHAUST_HAND, 0);   /* upgraded: the player chooses */
     } else if (strcmp(c->id, "Warcry") == 0) {
         /* Warcry.java:29-32: DrawCardAction runs before PutOnDeckAction, so
          * the card the player puts back cannot be the one just drawn. */
@@ -2751,8 +2771,11 @@ int battle_play(int slot, int target) {
          * the upgraded copy also lowers the card's cost for the combat. */
         for (int i = 0; i < g_battle.hand_count; i++) {
             int index = CARD_INDEX(g_battle.hand[i]);
-            if (battle_cost_of(&sts_cards[index]) > 1) g_battle.cost_one_turn[index] = 1;
-            if (up && sts_cards[index].cost > 1) g_battle.cost_one_combat[index] = 1;
+            /* Read the base cost once: setting cost_one_turn makes the second
+             * battle_cost_of() call return 1 and would skip cost_one_combat. */
+            int base_cost = battle_cost_of(&sts_cards[index], battle_hand_up(i));
+            if (base_cost > 1) g_battle.cost_one_turn[index] = 1;
+            if (up && base_cost > 1) g_battle.cost_one_combat[index] = 1;
         }
     } else if (strcmp(c->id, "Apotheosis") == 0) {
         upgrade_pile(g_battle.hand, g_battle.hand_count);
@@ -2766,7 +2789,7 @@ int battle_play(int slot, int target) {
         int candidates[10];
         int n = 0;
         for (int i = 0; i < g_battle.hand_count; i++) {
-            if (battle_cost_of(&sts_cards[CARD_INDEX(g_battle.hand[i])]) > 0) candidates[n++] = i;
+            if (battle_cost_of(&sts_cards[CARD_INDEX(g_battle.hand[i])], battle_hand_up(i)) > 0) candidates[n++] = i;
         }
         if (n > 0) {
             int index = CARD_INDEX(g_battle.hand[candidates[rnd() % (unsigned int)n]]);
@@ -3383,6 +3406,12 @@ void battle_choose_reward(int index) {
     map_after_node();
 }
 
+/* SkipRewardsRoomAction: leave the loot behind and move on. */
+void battle_skip_reward(void) {
+    if (g_run.screen != SCREEN_REWARD) return;
+    map_after_node();
+}
+
 int battle_deck_count(void) { return g_run.deck_count; }
 
 int battle_deck_card(int index) {
@@ -3395,6 +3424,10 @@ int battle_deck_up(int index) {
 
 int battle_can_upgrade(void) {
     for (int i = 0; i < g_run.deck_count; i++) {
+        int card = CARD_INDEX(g_run.deck[i]);
+        if (card < 0 || card >= STS_CARD_COUNT) continue;
+        /* AbstractCard.canUpgrade(): curses and statuses have no upgrade. */
+        if (sts_cards[card].type > 2) continue;
         if (!CARD_UPGRADED(g_run.deck[i])) return 1;
     }
     return 0;
@@ -3413,6 +3446,7 @@ int battle_confirm_upgrade(int deck_index) {
     if (g_run.screen != SCREEN_UPGRADE) return 0;
     if (deck_index < 0 || deck_index >= g_run.deck_count) return 0;
     if (CARD_UPGRADED(g_run.deck[deck_index])) return 0;
+    if (sts_cards[CARD_INDEX(g_run.deck[deck_index])].type > 2) return 0;
     g_run.deck[deck_index] = CARD_ENTRY(CARD_INDEX(g_run.deck[deck_index]), 1);
     snprintf(g_run.upgrade_name, sizeof(g_run.upgrade_name), "升级 %s",
              sts_cards[CARD_INDEX(g_run.deck[deck_index])].name);

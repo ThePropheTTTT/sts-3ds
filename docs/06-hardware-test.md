@@ -97,3 +97,5 @@ python tools/preflight.py --sdmc E:\
 
 产物是 `port/build/sts3ds_test.3dsx`，启动后直接跑断言并显示
 `CARD TEST <n> cases 0 failed`。这个构建**不**显示启动自检屏，也不读写自动存档；它仍会写 `sdmc:/3ds/sts3ds/log.txt`，方便把断言失败带回来。
+
+给 UI 截图时在同一命令前加 `UI_DEMO`：`0` 升级屏、`1` 奖励屏、`2` 篝火、`3` True Grit+ 选牌屏，可得到 `CARD_TEST=1 UI_DEMO=1 bash port/build.sh` 这样的组合。

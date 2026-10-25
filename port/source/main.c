@@ -162,6 +162,11 @@ static int s_pending_potion = -1;
 static int s_konami_pos;
 static int s_last_screen = -1;
 static int s_new_game_arm;   /* B twice on the map starts a fresh run */
+static int s_swallow_touch;  /* eat the rest of a tap that closed the status panel */
+static int s_press_skip;     /* reward screen: "skip" button is being pressed */
+static int s_title_has_save;
+static int s_title_sel;
+static void reset_gestures(void);
 static char s_toast[96];
 static int s_toast_ttl;
 static int s_diag_overlay;
@@ -318,8 +323,12 @@ static int reward_rect(int index, int *rx, int *ry) {
     int total = 3 * REWARD_W + 2 * REWARD_GAP;
     int x0 = (BOT_W - total) / 2;
     *rx = x0 + index * (REWARD_W + REWARD_GAP);
-    *ry = 46;
+    *ry = 66;
     return 1;
+}
+
+static int in_skip_reward(int px, int py) {
+    return px >= 246 && px < 314 && py >= 3 && py < 23;
 }
 
 static int reward_hit(int px, int py) {
@@ -332,15 +341,44 @@ static int reward_hit(int px, int py) {
 }
 
 static void campfire_rect(int index, int *rx, int *ry) {
-    *rx = index == 0 ? 24 : 168;
-    *ry = 96;
+    *rx = 16;
+    *ry = index == 0 ? 70 : 132;
 }
 
 static int campfire_hit(int px, int py) {
     for (int i = 0; i < 2; i++) {
         int rx, ry;
         campfire_rect(i, &rx, &ry);
-        if (px >= rx && px < rx + 128 && py >= ry && py < ry + 62) return i;
+        if (px >= rx && px < rx + 288 && py >= ry && py < ry + 50) return i;
+    }
+    return -1;
+}
+
+/* The upgrade list shows the actual card faces, ten to a page. */
+static void upgrade_card_rect(int slot, int *rx, int *ry) {
+    *rx = 9 + (slot % 5) * 62;
+    *ry = 24 + (slot / 5) * 84;
+}
+
+static int in_detail_tab(int px, int py) {
+    for (int i = 0; i < 2; i++) {
+        int x = 112 + i * 56;
+        if (px >= x && px < x + 52 && py >= 2 && py < 24) return i;
+    }
+    return -1;
+}
+
+static void title_rect(int index, int *rx, int *ry) {
+    *rx = 50;
+    *ry = index == 0 ? 104 : 148;
+}
+
+static int title_hit(int px, int py) {
+    int count = s_title_has_save ? 2 : 1;
+    for (int i = 0; i < count; i++) {
+        int rx, ry;
+        title_rect(i, &rx, &ry);
+        if (px >= rx && px < rx + 220 && py >= ry && py < ry + 34) return i;
     }
     return -1;
 }
@@ -690,7 +728,7 @@ static void draw_card_at(int card_index, int up, float x, float y, float w, floa
      * the orb for the CARD'S COLOUR (never the rarity), then the cost number.
      * Unplayable cards (cost <= -2) get no badge, and curses/statuses only show
      * a number when they are Slimed or Pride. */
-    int card_cost = battle_cost_of(c);
+    int card_cost = battle_cost_of(c, up);
     int show_cost = card_cost > -2;
     int show_number = show_cost
         && !(c->type == 3 && strcmp(c->id, "Slimed") != 0)
@@ -1926,7 +1964,7 @@ static void draw_detail_panel(void) {
     /* Tabs. */
     const char *tabs[2] = {"状态", "药水"};
     for (int i = 0; i < 2; i++) {
-        float x = 150.0f + i * 56.0f;
+        float x = 112.0f + i * 56.0f;
         int active = i == s_panel_tab;
         rect_fill(x, 2, 52, 22, active ? RGB(74, 62, 36) : RGB(34, 32, 28), 0.91f);
         if (active) rect_frame(x, 2, 52, 22, 1.0f, COL_LIT, 0.92f);
@@ -2381,18 +2419,47 @@ static void draw_bottom_fight(void) {
     }
 }
 
-static void draw_reward_screen(void) {
-    rect_fill(0, 0, TOP_W, 20, RGBA(14, 14, 14, 220), 0.3f);
-    text_draw(FS_SMALL, "战利品", 6, 1, COL_DIM);
-    char buf[48];
-    snprintf(buf, sizeof(buf), "关 %d/%d", g_run.node + 1, run_node_count());
-    text_draw(FS_SMALL, buf, 62, 1, COL_GOLD);
-    text_draw(FS_BIG, "选择一张牌加入牌组", 90, 70, COL_INK);
-    if (g_run.gold_gain > 0) {
-        snprintf(buf, sizeof(buf), "战利品：+%d 金币", g_run.gold_gain);
-        text_draw(FS_SMALL, buf, 110, 148, COL_GOLD);
+static void draw_reward_top(void) {
+    char buf[64];
+    draw_background();
+    rect_fill(0, 0, TOP_W, TOP_H, RGBA(8, 8, 10, 150), 0.2f);
+    text_draw(FS_BIG, "战利品", 160, 54, COL_GOLD);
+    snprintf(buf, sizeof(buf), "+%d 金币", g_run.gold_gain);
+    text_draw(FS_MID, buf, 130, 104, RGB(230, 200, 120));
+    if (g_run.potion_gain >= 0) {
+        snprintf(buf, sizeof(buf), "药水：%s", battle_potion_name(g_run.potion_gain));
+        text_draw(FS_SMALL, buf, 130, 130, RGB(150, 210, 220));
+    } else if (g_run.potion_gain == -2) {
+        text_draw(FS_SMALL, "药水：栏位已满", 130, 130, COL_DIM);
+    } else {
+        text_draw(FS_SMALL, "药水：无", 130, 130, COL_DIM);
     }
-    text_draw(FS_SMALL, "←→ 选择  A 或点卡牌确认", 110, 166, COL_DIM);
+    text_draw(FS_SMALL, "选择一张牌加入牌组，或跳过", 96, 190, COL_DIM);
+}
+
+static void draw_reward_screen(void) {
+    char buf[64];
+    rect_fill(0, 0, BOT_W, BOT_H, RGB(22, 20, 18), 0.0f);
+    rect_fill(0, 0, BOT_W, 24, RGBA(12, 12, 14, 235), 0.3f);
+    text_draw(FS_MID, "战利品", 8, 1, COL_GOLD);
+    snprintf(buf, sizeof(buf), "关 %d/%d", g_run.node + 1, run_node_count());
+    text_draw(FS_SMALL, buf, 84, 4, COL_DIM);
+    int skip_lit = s_press_skip > 0;
+    rect_fill(246, 3, 68, 20, skip_lit ? RGB(86, 58, 34) : RGB(38, 34, 30), 0.32f);
+    rect_frame(246, 3, 68, 20, 1.0f, skip_lit ? COL_LIT : RGB(100, 88, 72), 0.33f);
+    text_draw(FS_SMALL, "跳过 B", 254, 6, skip_lit ? COL_INK : COL_DIM);
+
+    snprintf(buf, sizeof(buf), "金币 +%d", g_run.gold_gain);
+    text_draw(FS_SMALL, buf, 8, 27, RGB(230, 200, 120));
+    if (g_run.potion_gain >= 0) {
+        snprintf(buf, sizeof(buf), "药水：%s", battle_potion_name(g_run.potion_gain));
+        text_draw(FS_SMALL, buf, 8, 45, RGB(150, 210, 220));
+    } else if (g_run.potion_gain == -2) {
+        text_draw(FS_SMALL, "药水：栏位已满", 8, 45, COL_DIM);
+    } else {
+        text_draw(FS_SMALL, "药水：无", 8, 45, COL_DIM);
+    }
+    text_draw(FS_SMALL, "←→ 选择  A 拿牌", 190, 27, COL_DIM);
 
     for (int i = 0; i < g_run.reward_count; i++) {
         int rx, ry;
@@ -2402,24 +2469,31 @@ static void draw_reward_screen(void) {
 
     if (s_reward_focus >= 0 && s_reward_focus < g_run.reward_count) {
         const struct CardDef *c = &sts_cards[g_run.reward[s_reward_focus]];
-        rect_fill(6, 168, 308, 64, COL_PANEL, 0.32f);
-        rect_frame(6, 168, 308, 64, 1.0f, RGB(86, 78, 66), 0.33f);
-        text_draw(FS_MID, c->name, 12, 170, COL_INK);
-        text_draw_wrapped(FS_SMALL, c->text, 12, 194, 296, 2, RGB(228, 218, 198));
+        rect_fill(6, 180, 308, 54, COL_PANEL, 0.32f);
+        rect_frame(6, 180, 308, 54, 1.0f, RGB(86, 78, 66), 0.33f);
+        text_draw(FS_MID, c->name, 12, 182, COL_INK);
+        text_draw_wrapped(FS_SMALL, c->text, 12, 205, 296, 2, RGB(228, 218, 198));
     }
 }
 
-static void draw_campfire_screen(void) {
-    rect_fill(0, 0, TOP_W, 20, RGBA(14, 14, 14, 220), 0.3f);
-    text_draw(FS_SMALL, "篝火", 6, 1, COL_DIM);
-    char buf[48];
-    snprintf(buf, sizeof(buf), "关 %d/%d", g_run.node + 1, run_node_count());
-    text_draw(FS_SMALL, buf, 62, 1, COL_GOLD);
-
-    text_draw(FS_BIG, "篝火", 170, 70, RGB(246, 176, 120));
+static void draw_campfire_top(void) {
+    char buf[64];
+    draw_background();
+    rect_fill(0, 0, TOP_W, TOP_H, RGBA(8, 8, 10, 130), 0.2f);
+    text_draw(FS_BIG, "篝火", 168, 62, RGB(246, 176, 120));
     snprintf(buf, sizeof(buf), "生命 %d/%d", g_battle.hp, g_battle.max_hp);
-    text_draw(FS_MID, buf, 130, 110, COL_INK);
-    text_draw(FS_SMALL, "选一项，A 或点击确认", 96, 150, COL_DIM);
+    text_draw(FS_MID, buf, 148, 110, COL_INK);
+    text_draw(FS_SMALL, "选择休息或锤炼，A 或点击确认", 92, 158, COL_DIM);
+}
+
+static void draw_campfire_screen(void) {
+    char buf[48];
+    rect_fill(0, 0, BOT_W, BOT_H, RGB(24, 21, 18), 0.0f);
+    rect_fill(0, 0, BOT_W, 22, RGBA(12, 12, 14, 235), 0.3f);
+    text_draw(FS_SMALL, "篝火", 8, 3, COL_GOLD);
+    snprintf(buf, sizeof(buf), "关 %d/%d  生命 %d/%d", g_run.node + 1, run_node_count(),
+             g_battle.hp, g_battle.max_hp);
+    text_draw(FS_SMALL, buf, 62, 3, COL_DIM);
 
     const char *labels[2] = {"休息", "锤炼"};
     const char *subs[2] = {"回复 30% 生命", battle_can_upgrade() ? "升级一张牌" : "牌组已全升级"};
@@ -2427,57 +2501,93 @@ static void draw_campfire_screen(void) {
         int rx, ry;
         campfire_rect(i, &rx, &ry);
         int lit = i == s_campfire_focus;
-        rect_fill((float)rx, (float)ry, 128, 62, lit ? RGB(70, 52, 36) : RGB(40, 36, 32), 0.4f);
-        rect_frame((float)rx, (float)ry, 128, 62, lit ? 3.0f : 1.0f, lit ? COL_LIT : RGB(110, 100, 86), 0.45f);
-        text_draw(FS_MID, labels[i], (float)rx + 44, (float)ry + 8, COL_INK);
-        text_draw(FS_SMALL, subs[i], (float)rx + 20, (float)ry + 34, COL_DIM);
+        rect_fill((float)rx, (float)ry, 288, 50, lit ? RGB(70, 52, 36) : RGB(40, 36, 32), 0.4f);
+        rect_frame((float)rx, (float)ry, 288, 50, lit ? 3.0f : 1.0f, lit ? COL_LIT : RGB(110, 100, 86), 0.45f);
+        text_draw(FS_MID, labels[i], (float)rx + 16, (float)ry + 6, COL_INK);
+        text_draw(FS_SMALL, subs[i], (float)rx + 96, (float)ry + 12, COL_DIM);
     }
-
-    text_draw(FS_SMALL, "← → 选择", 130, 214, COL_DIM);
+    text_draw(FS_SMALL, "↑↓ 选择  A 确认", 104, 212, COL_DIM);
 }
 
-static void upgrade_row_rect(int row, int *rx, int *ry) {
-    *rx = 10;
-    *ry = 26 + row * 20;
+static void draw_upgrade_top(void) {
+    int count = battle_deck_count();
+    int sel = s_upgrade_focus;
+    char buf[96];
+    draw_background();
+    rect_fill(0, 0, TOP_W, TOP_H, RGBA(8, 8, 10, 170), 0.2f);
+    text_draw(FS_MID, "锤炼 · 升级一张牌", 10, 4, COL_GOLD);
+    snprintf(buf, sizeof(buf), "牌组 %d 张", count);
+    text_draw(FS_SMALL, buf, 330, 7, COL_DIM);
+
+    if (sel < 0 || sel >= count) return;
+    int card = battle_deck_card(sel);
+    int up = battle_deck_up(sel);
+    const struct CardDef *c = &sts_cards[card];
+
+    text_draw(FS_SMALL, up ? "当前（已升级）" : "当前", 48, 30, COL_DIM);
+    draw_card(card, up, 36, 50, 110, 154, 1);
+    if (!up && c->type <= 2) {
+        text_draw(FS_SMALL, "升级后", 268, 30, COL_GOLD);
+        draw_card(card, 1, 254, 50, 110, 154, 1);
+        text_draw(FS_MID, "→", 190, 108, COL_LIT);
+    } else {
+        text_draw(FS_SMALL, "这张牌已经没有升级", 244, 108, COL_DIM);
+    }
+
+    int cost_before = battle_cost_of(c, up);
+    int cost_after = battle_cost_of(c, 1);
+    int dmg_before = c->damage + (up ? c->up_damage : 0);
+    int dmg_after = c->damage + c->up_damage;
+    int blk_before = c->block + (up ? c->up_block : 0);
+    int blk_after = c->block + c->up_block;
+    int magic_before = c->magic + (up ? c->up_magic : 0);
+    int magic_after = c->magic + c->up_magic;
+
+    snprintf(buf, sizeof(buf), "费 %d → %d", cost_before, up ? cost_before : cost_after);
+    text_draw(FS_SMALL, buf, 10, 212, COL_INK);
+    int x = 96;
+    if (c->damage) {
+        snprintf(buf, sizeof(buf), "伤害 %d → %d", dmg_before, up ? dmg_before : dmg_after);
+        text_draw(FS_SMALL, buf, (float)x, 212, COL_INK);
+        x += 98;
+    }
+    if (c->block) {
+        snprintf(buf, sizeof(buf), "格挡 %d → %d", blk_before, up ? blk_before : blk_after);
+        text_draw(FS_SMALL, buf, (float)x, 212, COL_INK);
+        x += 98;
+    }
+    if (c->magic && !c->damage && !c->block) {
+        snprintf(buf, sizeof(buf), "数值 %d → %d", magic_before, up ? magic_before : magic_after);
+        text_draw(FS_SMALL, buf, (float)x, 212, COL_INK);
+    }
 }
 
 static void draw_upgrade_screen(void) {
-    rect_fill(0, 0, TOP_W, 20, RGBA(14, 14, 14, 220), 0.3f);
-    char buf[48];
+    char buf[64];
     int count = battle_deck_count();
-    int page = s_upgrade_focus / 9;
-    int first = page * 9;
-    snprintf(buf, sizeof(buf), "锤炼 · 升级一张牌 %d/%d", page + 1, (count + 8) / 9);
-    text_draw(FS_SMALL, buf, 6, 1, COL_GOLD);
-    snprintf(buf, sizeof(buf), "牌组 %d 张", count);
-    text_draw(FS_SMALL, buf, 236, 1, COL_DIM);
+    int page = s_upgrade_focus / 10;
+    int first = page * 10;
+    rect_fill(0, 0, BOT_W, BOT_H, RGB(22, 20, 18), 0.0f);
+    rect_fill(0, 0, BOT_W, 22, RGBA(12, 12, 14, 235), 0.3f);
+    text_draw(FS_SMALL, "锤炼", 8, 3, COL_GOLD);
+    snprintf(buf, sizeof(buf), "升级一张牌  %d/%d 页", page + 1, (count + 9) / 10);
+    text_draw(FS_SMALL, buf, 62, 3, COL_DIM);
 
-    for (int i = first; i < first + 9 && i < count; i++) {
+    for (int i = first; i < first + 10 && i < count; i++) {
         int rx, ry;
-        upgrade_row_rect(i - first, &rx, &ry);
+        upgrade_card_rect(i - first, &rx, &ry);
         int card_index = battle_deck_card(i);
         int up = battle_deck_up(i);
-        const struct CardDef *c = &sts_cards[card_index];
-        int lit = (i == s_upgrade_focus);
-        rect_fill((float)rx - 4, (float)ry - 1, 308, 19, lit ? RGB(64, 54, 36) : COL_PANEL, 0.32f);
-        if (lit) rect_frame((float)rx - 4, (float)ry - 1, 308, 19, 1.0f, COL_LIT, 0.33f);
-
-        char name[40];
-        snprintf(name, sizeof(name), "%s%s", c->name, up ? "+" : "");
-        text_draw(FS_SMALL, name, (float)rx, (float)ry + 1, up ? COL_DIM : COL_INK);
-        snprintf(buf, sizeof(buf), "费 %d", battle_cost_of(c));
-        text_draw(FS_SMALL, buf, 176, (float)ry + 1, COL_DIM);
-        if (c->damage) {
-            snprintf(buf, sizeof(buf), "%d 伤", c->damage + (up ? c->up_damage : 0));
-        } else if (c->block) {
-            snprintf(buf, sizeof(buf), "%d 挡", c->block + (up ? c->up_block : 0));
-        } else {
-            snprintf(buf, sizeof(buf), "-");
+        draw_card(card_index, up, (float)rx, (float)ry, 54, 76, i == s_upgrade_focus);
+        if (up) {
+            rect_fill((float)rx, (float)ry, 54, 12, RGBA(8, 8, 10, 170), 0.7f);
+            text_draw_depth(FS_SMALL, "已升级", (float)rx + 6, (float)ry + 1, COL_DIM, 0.72f);
         }
-        text_draw(FS_SMALL, buf, 246, (float)ry + 1, COL_DIM);
     }
 
-    text_draw(FS_SMALL, "↑↓ 选择  A 升级  B 返回", 8, 212, COL_DIM);
+    text_draw(FS_SMALL, count > 10 ? "←→↑↓ 选择  L/R 翻页  A 升级  B 返回"
+                                  : "←→↑↓ 选择  A 升级  B 返回",
+              8, 218, COL_DIM);
 }
 
 static void draw_end_screen(void) {
@@ -2586,7 +2696,7 @@ static void draw_pick_bottom(void) {
     text_draw(FS_MID, pick_title(mode), 8, 2, COL_GOLD);
     snprintf(buf, sizeof(buf), "%s%s", c->name, up ? "+" : "");
     text_draw(FS_MID, buf, 8, 26, COL_INK);
-    snprintf(buf, sizeof(buf), "费 %d   %s", battle_cost_of(c), type_label(c->type));
+    snprintf(buf, sizeof(buf), "费 %d   %s", battle_cost_of(c, up), type_label(c->type));
     text_draw(FS_SMALL, buf, 8, 50, COL_DIM);
     text_draw_wrapped(FS_SMALL, up ? c->text_up : c->text, 8, 70, 304, 7,
                       RGB(228, 218, 198));
@@ -2809,6 +2919,49 @@ static void diag_boot_checks(void) {
         diag_warn("音效文件", "sfx/card_play.pcm 缺失");
 }
 
+static void draw_title_top(void) {
+    draw_background();
+    rect_fill(0, 0, TOP_W, TOP_H, RGBA(6, 6, 8, 150), 0.2f);
+    text_draw(FS_BIG, "杀戮尖塔", 128, 64, COL_GOLD);
+    text_draw(FS_MID, "3DS", 178, 102, COL_INK);
+    if (s_title_has_save)
+        text_draw(FS_SMALL, "存档已找到", 160, 158, COL_DIM);
+    else
+        text_draw(FS_SMALL, "没有存档", 164, 158, COL_DIM);
+    text_draw(FS_SMALL, "非官方同人移植 · 仅供学习", 106, 214, RGB(150, 142, 126));
+}
+
+static void draw_title_bottom(void) {
+    rect_fill(0, 0, BOT_W, BOT_H, RGB(18, 17, 15), 0.0f);
+    text_draw(FS_MID, "杀戮尖塔 · 3DS", 92, 46, COL_GOLD);
+    text_draw(FS_SMALL, "选择一项开始", 116, 74, COL_DIM);
+
+    int count = s_title_has_save ? 2 : 1;
+    for (int i = 0; i < count; i++) {
+        int rx, ry;
+        title_rect(i, &rx, &ry);
+        int lit = i == s_title_sel;
+        rect_fill((float)rx, (float)ry, 220, 34, lit ? RGB(70, 56, 34) : RGB(40, 36, 32), 0.4f);
+        rect_frame((float)rx, (float)ry, 220, 34, lit ? 2.0f : 1.0f,
+                   lit ? COL_LIT : RGB(110, 100, 86), 0.45f);
+        const char *label = s_title_has_save ? (i == 0 ? "继续游戏" : "新游戏") : "新游戏";
+        text_draw(FS_MID, label, (float)rx + 80, (float)ry + 7, COL_INK);
+    }
+    text_draw(FS_SMALL, "↑↓ 选择  A 确认", 104, 216, COL_DIM);
+}
+
+static void title_choose(int index) {
+    if (s_title_has_save && index == 0) {
+        g_run.screen = SCREEN_MAP;
+    } else {
+        save_clear();
+        run_start();
+        g_run.screen = SCREEN_MAP;
+    }
+    s_last_screen = -1;
+    reset_gestures();
+}
+
 static void scene_top(void) {
     C2D_TargetClear(s_top, RGB(16, 18, 20));
     C2D_SceneBegin(s_top);
@@ -2833,9 +2986,18 @@ static void scene_top(void) {
     case SCREEN_PICK:
         draw_pick_top();
         break;
+    case SCREEN_TITLE:
+        draw_title_top();
+        break;
     case SCREEN_REWARD:
+        draw_reward_top();
+        break;
     case SCREEN_CAMPFIRE:
+        draw_campfire_top();
+        break;
     case SCREEN_UPGRADE:
+        draw_upgrade_top();
+        break;
     case SCREEN_PURGE:
     case SCREEN_TREASURE:
     case SCREEN_VICTORY:
@@ -2863,6 +3025,9 @@ static void scene_bottom(void) {
     switch (g_run.screen) {
     case SCREEN_FIGHT:
         draw_bottom_fight();
+        break;
+    case SCREEN_TITLE:
+        draw_title_bottom();
         break;
     case SCREEN_REWARD:
         draw_reward_screen();
@@ -2895,7 +3060,7 @@ static void scene_bottom(void) {
             snprintf(name, sizeof(name), "%s%s", sts_cards[battle_deck_card(i)].name,
                      battle_deck_up(i) ? "+" : "");
             text_draw(FS_SMALL, name, 14, y, COL_INK);
-            snprintf(buf, sizeof(buf), "费 %d", battle_cost_of(&sts_cards[battle_deck_card(i)]));
+            snprintf(buf, sizeof(buf), "费 %d", battle_cost_of(&sts_cards[battle_deck_card(i)], battle_deck_up(i)));
             text_draw(FS_SMALL, buf, 210, y, COL_DIM);
         }
         text_draw(FS_SMALL, "↑↓ 选择  A 移除  B 返回", 8, 216, COL_DIM);
@@ -2964,10 +3129,20 @@ static void reset_gestures(void) {
     s_press_campfire = -1;
     s_press_restart = 0;
     s_press_advance = 0;
+    s_press_skip = 0;
+    s_swallow_touch = 0;
     s_play_fx.active = 0;
 }
 
 static void handle_touch_fight(touchPosition *touch, int down) {
+    /* A tap that dismissed or switched the status panel must not leak into the
+     * buttons underneath it (the old overlap closed "药水" and then ended the
+     * turn on the same press). */
+    if (!down && s_swallow_touch) {
+        s_swallow_touch = 0;
+        return;
+    }
+    if (s_swallow_touch) return;
     if (down) {
         if (s_drag.active) {
             int rise = s_drag.start_y - touch->py;
@@ -2986,7 +3161,15 @@ static void handle_touch_fight(touchPosition *touch, int down) {
             return;
         }
         if (s_detail) {
-            s_detail = 0;
+            s_swallow_touch = 1;
+            int tab = in_detail_tab(touch->px, touch->py);
+            if (tab >= 0) {
+                s_panel_tab = tab;
+                s_potion_sel = 0;
+                s_panel_scroll = 0;
+            } else {
+                s_detail = 0;
+            }
             return;
         }
         if (s_press_end) return;
@@ -3096,25 +3279,44 @@ static void handle_touch(void) {
     case SCREEN_FIGHT:
         handle_touch_fight(&touch, down);
         break;
+    case SCREEN_TITLE:
+        if (down) {
+            if (s_press_reward < 0) s_press_reward = title_hit(touch.px, touch.py);
+        } else if (s_press_reward >= 0) {
+            int hit = title_hit(touch.px, touch.py);
+            if (hit == s_press_reward) title_choose(hit);
+            s_press_reward = -1;
+        }
+        break;
     case SCREEN_REWARD:
         if (down) {
-            if (s_press_reward < 0) s_press_reward = reward_hit(touch.px, touch.py);
-        } else if (s_press_reward >= 0) {
-            int hit = reward_hit(touch.px, touch.py);
-            if (hit == s_press_reward) battle_choose_reward(hit);
-            s_press_reward = -1;
+            if (s_press_skip == 0 && in_skip_reward(touch.px, touch.py)) {
+                s_press_skip = 1;
+            } else if (s_press_reward < 0) {
+                s_press_reward = reward_hit(touch.px, touch.py);
+            }
+        } else {
+            if (s_press_skip > 0) {
+                if (in_skip_reward(touch.px, touch.py)) battle_skip_reward();
+                s_press_skip = 0;
+            } else if (s_press_reward >= 0) {
+                int hit = reward_hit(touch.px, touch.py);
+                if (hit == s_press_reward) battle_choose_reward(hit);
+                s_press_reward = -1;
+            }
         }
         break;
     case SCREEN_UPGRADE: {
         static int press_row = -1;
         if (down) {
             if (press_row < 0) {
-                int page = s_upgrade_focus / 9;
-                int first = page * 9;
-                for (int i = first; i < first + 9; i++) {
+                int page = s_upgrade_focus / 10;
+                int first = page * 10;
+                for (int i = first; i < first + 10 && i < battle_deck_count(); i++) {
                     int rx, ry;
-                    upgrade_row_rect(i - first, &rx, &ry);
-                    if (touch.px >= rx - 4 && touch.px < rx + 304 && touch.py >= ry - 1 && touch.py < ry + 18) {
+                    upgrade_card_rect(i - first, &rx, &ry);
+                    if (touch.px >= rx && touch.px < rx + 54 &&
+                        touch.py >= ry && touch.py < ry + 76) {
                         press_row = i;
                         s_upgrade_focus = i;
                         break;
@@ -3123,8 +3325,9 @@ static void handle_touch(void) {
             }
         } else if (press_row >= 0) {
             int rx, ry;
-            upgrade_row_rect(press_row - (s_upgrade_focus / 9) * 9, &rx, &ry);
-            if (touch.px >= rx - 4 && touch.px < rx + 304 && touch.py >= ry - 1 && touch.py < ry + 18) {
+            upgrade_card_rect(press_row - (s_upgrade_focus / 10) * 10, &rx, &ry);
+            if (touch.px >= rx && touch.px < rx + 54 &&
+                touch.py >= ry && touch.py < ry + 76) {
                 battle_confirm_upgrade(press_row);
             }
             press_row = -1;
@@ -3199,6 +3402,13 @@ static void handle_buttons(u32 kDown) {
     }
 
     switch (g_run.screen) {
+    case SCREEN_TITLE: {
+        int count = s_title_has_save ? 2 : 1;
+        if (kDown & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT))
+            s_title_sel = (s_title_sel + 1) % count;
+        if (kDown & KEY_A) title_choose(s_title_sel);
+        break;
+    }
     case SCREEN_FIGHT:
         if (s_detail) {
             if (kDown & (KEY_L | KEY_R)) {
@@ -3309,21 +3519,29 @@ static void handle_buttons(u32 kDown) {
         if (kDown & (KEY_RIGHT | KEY_R)) {
             if (s_reward_focus + 1 < g_run.reward_count) s_reward_focus++;
         }
+        if (kDown & KEY_B) battle_skip_reward();
         if (kDown & KEY_A) battle_choose_reward(s_reward_focus);
         break;
 
     case SCREEN_CAMPFIRE:
-        if (kDown & (KEY_LEFT | KEY_L | KEY_RIGHT | KEY_R)) s_campfire_focus = 1 - s_campfire_focus;
+        if (kDown & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT | KEY_L | KEY_R))
+            s_campfire_focus = 1 - s_campfire_focus;
         if (kDown & KEY_A) battle_campfire(s_campfire_focus);
         break;
 
     case SCREEN_UPGRADE: {
         int count = battle_deck_count();
-        if (kDown & (KEY_UP | KEY_LEFT)) {
-            if (s_upgrade_focus > 0) s_upgrade_focus--;
-        }
-        if (kDown & (KEY_DOWN | KEY_RIGHT)) {
-            if (s_upgrade_focus + 1 < count) s_upgrade_focus++;
+        int step = 0;
+        if (kDown & KEY_LEFT) step = -1;
+        if (kDown & KEY_RIGHT) step = 1;
+        if (kDown & KEY_UP) step = -5;
+        if (kDown & KEY_DOWN) step = 5;
+        if (kDown & KEY_L) step = -10;
+        if (kDown & KEY_R) step = 10;
+        if (step) {
+            s_upgrade_focus += step;
+            if (s_upgrade_focus < 0) s_upgrade_focus = 0;
+            if (s_upgrade_focus >= count) s_upgrade_focus = count > 0 ? count - 1 : 0;
         }
         if (kDown & KEY_B) battle_cancel_upgrade();
         if (kDown & KEY_A) battle_confirm_upgrade(s_upgrade_focus);
@@ -3561,7 +3779,18 @@ int main(int argc, char **argv) {
 #else
     int loaded = save_load();
     diag_log("save_load: %d", loaded);
-    if (!loaded) run_start();
+    s_title_has_save = loaded;
+    s_title_sel = 0;
+    if (!loaded) {
+        /* Do not create a run (and a save file) just to show the title. */
+        memset(&g_run, 0, sizeof(g_run));
+        memset(&g_battle, 0, sizeof(g_battle));
+        g_run.act = 1;
+        g_run.potion_gain = -1;
+        g_battle.hp = 80;
+        g_battle.max_hp = 80;
+    }
+    g_run.screen = SCREEN_TITLE;
 #endif
 
     diag_stage("boot checks");
@@ -3579,6 +3808,9 @@ int main(int argc, char **argv) {
     /* build.sh CARD_TEST=1: run the card assertions and show the report
      * instead of the game.  The screenshot of this screen is the evidence. */
     card_test_run();
+#if defined(UI_DEMO)
+    card_test_demo_ui(UI_DEMO);
+#endif
     while (aptMainLoop()) {
         hidScanInput();
         u32 kDown = hidKeysDown();
@@ -3598,8 +3830,12 @@ int main(int argc, char **argv) {
             else if (s_drag.active && (kDown & KEY_Y)) card_test_touch_release(0);
             else if (s_drag.active && (kDown & KEY_B)) card_test_touch_release(1);
             else handle_buttons(kDown);
-        } else if (g_run.screen == SCREEN_PICK || g_run.screen == SCREEN_EVENT) {
-            if (g_run.screen == SCREEN_EVENT && (kDown & KEY_SELECT)) card_test_demo_exit();
+        } else if (g_run.screen == SCREEN_PICK || g_run.screen == SCREEN_EVENT ||
+                   g_run.screen == SCREEN_UPGRADE || g_run.screen == SCREEN_REWARD ||
+                   g_run.screen == SCREEN_CAMPFIRE) {
+            if ((g_run.screen == SCREEN_EVENT || g_run.screen == SCREEN_UPGRADE ||
+                 g_run.screen == SCREEN_REWARD || g_run.screen == SCREEN_CAMPFIRE) &&
+                (kDown & KEY_SELECT)) card_test_demo_exit();
             else handle_buttons(kDown);
         } else {
             if (kDown & KEY_X) card_test_demo_pick(0);
@@ -3636,7 +3872,8 @@ int main(int argc, char **argv) {
         audio_update();
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
         if (g_run.screen == SCREEN_PICK || g_run.screen == SCREEN_FIGHT ||
-            g_run.screen == SCREEN_EVENT) {
+            g_run.screen == SCREEN_EVENT || g_run.screen == SCREEN_UPGRADE ||
+            g_run.screen == SCREEN_REWARD || g_run.screen == SCREEN_CAMPFIRE) {
             s_card_seq = 0;
             scene_top();
             scene_bottom();

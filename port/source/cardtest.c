@@ -2732,6 +2732,70 @@ void card_test_demo_pick(int which) {
     g_run.screen = SCREEN_PICK;
 }
 
+void card_test_demo_ui(int which) {
+    static const char *const DECK[] = {
+        "Body Slam", "Strike_R", "Defend_R", "Bash", "True Grit",
+        "Pommel Strike", "Shrug It Off", "Iron Wave", "Cleave", "Anger",
+    };
+    memset(&g_battle, 0, sizeof(g_battle));
+    memset(&g_run, 0, sizeof(g_run));
+    g_battle.hp = 55;
+    g_battle.max_hp = 80;
+    g_battle.energy = 3;
+    g_battle.max_energy = 3;
+    g_battle.phase = PHASE_PLAYER;
+    g_battle.pending_split = -1;
+    g_run.act = 1;
+    g_run.node = 4;
+    g_map.gold = 99;
+    g_battle.rng = 0x12345678u;
+    map_generate();
+
+    if (which == 0) {
+        /* Campfire upgrade: Body Slam is first so the top screen shows the
+         * 1 -> 0 cost change without any navigation.  True Grit+ is already
+         * upgraded, which draws the grey "已升级" strip. */
+        g_run.deck_count = 0;
+        for (int i = 0; i < 10; i++) {
+            int idx = battle_find_card(DECK[i]);
+            g_run.deck[g_run.deck_count++] = CARD_ENTRY(idx, i == 4);
+        }
+        g_run.screen = SCREEN_UPGRADE;
+    } else if (which == 1) {
+        /* Reward: gold, a potion and three cards, with the skip button. */
+        g_run.gold_gain = 27;
+        g_run.potion_gain = 0;
+        g_run.potions[0] = 0;
+        g_run.potion_count = 1;
+        g_run.reward[0] = battle_find_card("Bash");
+        g_run.reward[1] = battle_find_card("Pommel Strike");
+        g_run.reward[2] = battle_find_card("Shrug It Off");
+        g_run.reward_count = 3;
+        g_run.screen = SCREEN_REWARD;
+    } else if (which == 2) {
+        g_run.deck_count = 0;
+        for (int i = 0; i < 10; i++) {
+            int idx = battle_find_card(DECK[i]);
+            g_run.deck[g_run.deck_count++] = CARD_ENTRY(idx, 0);
+        }
+        g_run.screen = SCREEN_CAMPFIRE;
+    } else {
+        /* True Grit+: play it and leave the real PICK_EXHAUST_HAND picker up. */
+        battle_test_spawn_act1(2);
+        g_battle.hand_count = 0;
+        int grit = battle_find_card("True Grit");
+        g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(grit, 1);
+        for (int i = 1; i < 5; i++) {
+            int idx = battle_find_card(DECK[i]);
+            g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(idx, 0);
+        }
+        g_battle.energy = 3;
+        g_battle.phase = PHASE_PLAYER;
+        g_run.screen = SCREEN_FIGHT;
+        battle_play(0, -1);
+    }
+}
+
 void card_test_demo_exit(void) {
     g_run.screen = SCREEN_MAP;
 }
@@ -2954,6 +3018,92 @@ static void test_batch17(void) {
     check("save map seed", (int)g_map.map_seed, (int)seed);
     check("save map types", memcmp(types, g_map.type, sizeof(types)) == 0, 1);
     check("save map node", map_node(0, 0), node);
+
+    /* m13737: upgradeBaseCost is an absolute cost, so the preview and the
+     * battle cost both have to see Body Slam's 1 -> 0. */
+    int body_i = battle_find_card("Body Slam");
+    int barricade_i = battle_find_card("Barricade");
+    int bfb_i = battle_find_card("Blood for Blood");
+    int strike_i = battle_find_card("Strike_R");
+    int defend_i = battle_find_card("Defend_R");
+    int bash_i = battle_find_card("Bash");
+    int grit_i = battle_find_card("True Grit");
+    check("cost body slam", battle_cost_of(&sts_cards[body_i], 0), 1);
+    check("cost body slam+", battle_cost_of(&sts_cards[body_i], 1), 0);
+    check("cost barricade+", battle_cost_of(&sts_cards[barricade_i], 1), 2);
+    check("cost blood+", battle_cost_of(&sts_cards[bfb_i], 1), 3);
+    check("cost strike+", battle_cost_of(&sts_cards[strike_i], 1), 1);
+    check("true grit+ text", strstr(sts_cards[grit_i].text_up, "选择") != NULL, 1);
+
+    /* A real won fight: two Acid Slimes at 1 HP, Cleave kills both, and the
+     * loot screen must carry gold, three cards and a potion result. */
+    battle_test_spawn_act1(2);
+    g_battle.enemies[0].hp = 1;
+    g_battle.enemies[1].hp = 1;
+    g_battle.hand_count = 0;
+    g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(battle_find_card("Cleave"), 0);
+    g_battle.energy = 3;
+    g_run.potion_count = 0;
+    g_run.screen = SCREEN_FIGHT;
+    int gold0 = g_map.gold;
+    battle_play(0, -1);
+    check("win screen", g_run.screen, SCREEN_REWARD);
+    check("win three cards", g_run.reward_count, 3);
+    check("win potion roll", g_run.potion_gain >= -2, 1);
+    check("win gold", g_map.gold, gold0 + g_run.gold_gain);
+    battle_skip_reward();
+    check("skip leaves loot", g_run.screen == SCREEN_REWARD, 0);
+
+    /* Potions: a full belt rejects the drop, an empty one takes it. */
+    g_run.potion_count = 3;
+    check("potion full rejected", battle_add_potion(POTION_HEAL), 0);
+    check("potion full stays", g_run.potion_count, 3);
+    g_run.potion_count = 0;
+    check("potion added", battle_add_potion(POTION_HEAL), 1);
+    check("potion added count", g_run.potion_count, 1);
+    check("potion id kept", (int)g_run.potions[0], POTION_HEAL);
+
+    /* Unupgraded True Grit exhausts a random other card, never itself. */
+    battle_test_spawn_act1(2);
+    g_battle.hand_count = 0;
+    g_battle.energy = 3;
+    g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(grit_i, 0);
+    g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(strike_i, 0);
+    g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(defend_i, 0);
+    g_run.screen = SCREEN_FIGHT;
+    battle_play(0, -1);
+    check("true grit consumes one", g_battle.exhaust_count, 1);
+    check("true grit hand left", g_battle.hand_count, 1);
+    check("true grit not itself", CARD_INDEX(g_battle.exhaust[0]) == grit_i, 0);
+    check("true grit keeps other",
+          g_battle.hand[0] == CARD_ENTRY(strike_i, 0) ||
+          g_battle.hand[0] == CARD_ENTRY(defend_i, 0), 1);
+
+    /* The same card from slot 2 with one card to its right.  The random
+     * victim can only be slot 0 or 1, so it always sits to the left: the
+     * played slot has to move down with the hand or the card after True
+     * Grit is discarded and True Grit itself stays in hand. */
+    battle_test_spawn_act1(2);
+    g_battle.hand_count = 0;
+    g_battle.energy = 3;
+    g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(strike_i, 0);
+    g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(defend_i, 0);
+    g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(grit_i, 0);
+    g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(bash_i, 0);
+    g_run.screen = SCREEN_FIGHT;
+    battle_play(2, -1);
+    int grit_left = 0;
+    for (int i = 0; i < g_battle.hand_count; i++) {
+        if (CARD_INDEX(g_battle.hand[i]) == grit_i) grit_left = 1;
+    }
+    check("true grit shifted slot exhausts one", g_battle.exhaust_count, 1);
+    check("true grit shifted slot hand", g_battle.hand_count, 2);
+    check("true grit shifted slot gone", grit_left, 0);
+    check("true grit shifted slot keeps right",
+          g_battle.hand[1] == CARD_ENTRY(bash_i, 0), 1);
+    check("true grit shifted slot discard", g_battle.discard_count, 1);
+    check("true grit shifted slot discarded itself",
+          g_battle.discard_count > 0 && CARD_INDEX(g_battle.discard[0]) == grit_i, 1);
 }
 
 void card_test_run(void) {

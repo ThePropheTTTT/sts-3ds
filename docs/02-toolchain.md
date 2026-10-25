@@ -142,7 +142,13 @@ Azahar 的 `GRenderWindow::mousePressEvent` 会直接忽略 `Qt::MouseEventSynth
 
 为了在 CI 式截图里仍然覆盖这条路径，`CARD_TEST=1` 构建保留了合成触摸入口（仅测试构建编译，出货包不含）：
 
-- 报告屏按 `B` 循环 Automaton / Collector / Gremlin Leader，`SELECT` 从战斗回到报告；
+- 报告屏按 `B` 循环全部战斗/选牌演示（Automaton → Collector → Gremlin Leader → 第 3 幕背景 → 第 1 幕 Boss 与普通怪 → 剩余 Power 卡 → Purity / Forethought 选牌），`SELECT` 从演示回到报告；
 - 战斗屏按 `X` 从第三张牌开始拖动并把目标切到 0 号敌人槽，按 `Y` 在该目标上松手出牌，按 `B` 把手牌放回扇形取消。
+
+需要给标题/奖励/篝火/升级这四个屏截图时，用同一套构建加 `UI_DEMO`（0 升级、1 奖励、2 篝火、3 True Grit+ 选牌），启动后直接停在对应画面：
+
+```powershell
+& 'E:/msys64/usr/bin/bash.exe' -lc 'CARD_TEST=1 UI_DEMO=1 bash /e/vibe_lab/sts-for-3ds/port/build.sh'
+```
 
 这组按键走的是和硬件相同的 `handle_touch_fight()`/`touchPosition` 路径，能验证“牌跟随手指、目标框/文字随横移切换、放回手牌不扣能量”。

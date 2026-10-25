@@ -39,6 +39,24 @@ def c_string(text: str) -> str:
     return '"' + "".join(out) + '"'
 
 
+TEXT_UP_OVERRIDES = {
+    # TrueGrit.java replaces UPGRADE_DESCRIPTION, but the zhs card JSON only
+    # carries the base description.  Keep the upgraded wording in one place.
+    "True Grit": "获得 {block} 点格挡。\n选择一张手牌消耗。",
+}
+
+
+def upgrade_text(card, deltas) -> str:
+    override = TEXT_UP_OVERRIDES.get(card["id"])
+    if override:
+        return override.format(
+            damage=(card.get("damage") or 0) + deltas.get("damage", 0),
+            block=(card.get("block") or 0) + deltas.get("block", 0),
+            magic=(card.get("magic") or 0) + deltas.get("magic", 0),
+        )
+    return render_text(card.get("text"), card, deltas)
+
+
 def render_text(atoms, card, deltas=None) -> str:
     values = {"damage": card.get("damage"), "block": card.get("block"), "magic": card.get("magic")}
     if deltas:
@@ -101,6 +119,7 @@ def main(argv=None) -> int:
         "    const char *text;",
         "    const char *text_up;",
         "    signed char  cost;      /* -1 = X, -2 = unplayable */",
+        "    signed char  cost_up;   /* upgraded cost (absolute; same as cost if unchanged) */",
         "    unsigned char type;     /* 0 attack, 1 skill, 2 power, 3 status, 4 curse */",
         "    unsigned char target;   /* 0 enemy, 1 all enemies, 2 self, 3 all, 4 none */",
         "    unsigned char color;    /* 0 red, 4 colorless, 5 curse, 6 status */",
@@ -132,13 +151,14 @@ def main(argv=None) -> int:
             fx = fy = fw = fh = 0
             page = 0
         lines.append(
-            "    {%s, %s, %s, %s, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d},"
+            "    {%s, %s, %s, %s, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d},"
             % (
                 c_string(card["id"]),
                 c_string(card["name"]),
                 c_string(render_text(card.get("text"), card)),
-                c_string(render_text(card.get("text"), card, deltas)),
+                c_string(upgrade_text(card, deltas)),
                 card.get("cost") if card.get("cost") is not None else -2,
+                deltas.get("cost", card.get("cost") if card.get("cost") is not None else -2),
                 TYPE_CODE.get(card.get("type", ""), 0),
                 TARGET_CODE.get(card.get("target", ""), 4),
                 COLOR_CODE.get(card.get("group", "red"), 0),

@@ -33,11 +33,15 @@ DEFAULT_JAR = os.environ.get("STS_JAR", "desktop-1.0.jar")
 CARD_PREFIX = "com/megacrit/cardcrawl/cards/"
 
 FIELDS = {"baseDamage": "damage", "baseBlock": "block", "baseMagicNumber": "magic"}
+# These helpers take a delta (the current number plus this value).
 HELPERS = {
     "upgradeDamage": "damage",
     "upgradeBlock": "block",
     "upgradeMagicNumber": "magic",
 }
+# upgradeBaseCost(I) takes the *new* absolute cost, not a delta.  Keeping it
+# separate is what makes Body Slam 1 -> 0 and Barricade 3 -> 2 come out right.
+ABSOLUTE_HELPERS = {"upgradeBaseCost": "cost"}
 
 # Opcodes allowed between the constant push and the consuming instruction.
 ALLOWED = {0x2A, 0x2B, 0x2C, 0x2D, 0x59, 0xB4} | set(range(0x02, 0x09)) | {0x10, 0x11, 0x84}
@@ -71,7 +75,11 @@ def analyse_upgrade(cf: ClassFile, base: dict) -> dict:
         ref = None
         if op in (0xB6, 0xB7, 0xB8):
             ref = cf.methodref(bytecode.u2(operand))
-            if ref and ref[1] in HELPERS:
+            if ref and ref[1] in ABSOLUTE_HELPERS:
+                value = int_before(insns, i)
+                if value is not None:
+                    deltas[ABSOLUTE_HELPERS[ref[1]]] = value
+            elif ref and ref[1] in HELPERS:
                 value = int_before(insns, i)
                 if value is not None:
                     field = HELPERS[ref[1]]
@@ -86,7 +94,8 @@ def analyse_upgrade(cf: ClassFile, base: dict) -> dict:
                 is_add = i > 0 and insns[i - 1][1] == 0x60
                 deltas[field] = value if is_add else value - (base.get(field) or 0)
 
-    return {k: v for k, v in deltas.items() if v}
+    # Cost 0 is meaningful (Body Slam+), so do not drop it with a truthiness test.
+    return {k: v for k, v in deltas.items() if v or k == "cost"}
 
 
 def main(argv=None) -> int:

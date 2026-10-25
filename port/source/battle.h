@@ -16,7 +16,8 @@ enum { PHASE_PLAYER = 0, PHASE_ENEMY, PHASE_WIN, PHASE_LOSE };
 enum { SCREEN_FIGHT = 0, SCREEN_REWARD, SCREEN_CAMPFIRE, SCREEN_UPGRADE, SCREEN_SHOP,
        SCREEN_PURGE, SCREEN_EVENT, SCREEN_TREASURE, SCREEN_MAP, SCREEN_VICTORY, SCREEN_DEFEAT,
        SCREEN_ACT_CLEAR,   /* boss beaten, another act waits behind the next key press */
-       SCREEN_PICK };      /* a card wants the player to choose from a pile */
+       SCREEN_PICK,        /* a card wants the player to choose from a pile */
+       SCREEN_TITLE };     /* title / continue-or-new-game */
 
 /* A pile entry packs (card index | upgraded flag). */
 #define CARD_ENTRY(card, up) ((card) | ((up) ? 0x100 : 0))
@@ -224,6 +225,7 @@ typedef struct {
     char upgrade_name[32];
     int campfire_choice;   /* 0 = rest, 1 = upgrade */
     int card_blizz;        /* cardBlizzRandomizer: +5 back on every rare reward */
+    int potion_gain;       /* -1 none, -2 inventory full, else Potion id */
     int ritual_bonus;      /* Ritual Dagger's permanent growth (one shared value) */
 } Run;
 
@@ -241,7 +243,7 @@ int battle_hand_up(int slot);
 int battle_find_card(const char *id);
 const CardDef *battle_card(int slot);
 int battle_card_cost(int slot);
-int battle_cost_of(const CardDef *c);
+int battle_cost_of(const CardDef *c, int up);
 int battle_card_targeted(int slot);
 /* Card-choice screen (Armaments, Burning Pact, ...). */
 int battle_pick_active(void);
@@ -269,6 +271,7 @@ int battle_relic_price(int id);
 int battle_potion_price(int id);
 
 void battle_choose_reward(int index);
+void battle_skip_reward(void);
 void battle_campfire(int choice);
 int run_node_is_fight(int node);
 int run_node_count(void);
