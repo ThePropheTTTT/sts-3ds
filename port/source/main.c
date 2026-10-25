@@ -771,7 +771,7 @@ static void rot_rect_frame(float cx, float cy, float w, float h, float angle,
 
 /* energy < 0 means "not in the player's hand": the game only reddens the cost
  * of a hand card the player cannot afford (AbstractCard.renderEnergy). */
-static void draw_card_at(int card_index, int up, float x, float y, float w, float h,
+static void draw_card_at(int card_index, int up, int level, float x, float y, float w, float h,
                          int focused, float zc, int energy, float angle) {
     const struct CardDef *c = &sts_cards[card_index];
     u32 accent = type_color(c->type);
@@ -929,7 +929,9 @@ static void draw_card_at(int card_index, int up, float x, float y, float w, floa
          * third, not its box centre (the banner region carries transparent trim).
          * The ribbon is silver, so the ink has to be dark. */
         char name[40];
-        snprintf(name, sizeof(name), "%s%s", c->name, up ? "+" : "");
+        if (level > 1) snprintf(name, sizeof(name), "%s+%d", c->name, level);
+        else if (level > 0) snprintf(name, sizeof(name), "%s+", c->name);
+        else snprintf(name, sizeof(name), "%s", c->name);
         float name_w = text_width(FS_SMALL, name);
         const float name_cy = y + h * (35.0f / 420.0f);   /* 175/420 above centre */
         text_draw_depth(FS_SMALL, name, x + (w - name_w) / 2.0f,
@@ -941,19 +943,19 @@ static void draw_card_at(int card_index, int up, float x, float y, float w, floa
     }
 }
 
-static void draw_card(int card_index, int up, float x, float y, float w, float h, int focused) {
+static void draw_card(int card_index, int up, int level, float x, float y, float w, float h, int focused) {
     int seq = s_card_seq < CARD_Z_MAX ? s_card_seq : CARD_Z_MAX;
     s_card_seq++;
-    draw_card_at(card_index, up, x, y, w, h, focused,
+    draw_card_at(card_index, up, level, x, y, w, h, focused,
                  CARD_Z_BASE + (float)seq * CARD_Z_STEP, -1, 0.0f);
 }
 
 /* Hand cards are the only ones where the game reddens an unaffordable cost. */
-static void draw_card_in_hand(int card_index, int up, float x, float y, float w, float h,
+static void draw_card_in_hand(int card_index, int up, int level, float x, float y, float w, float h,
                               int focused, float angle) {
     int seq = s_card_seq < CARD_Z_MAX ? s_card_seq : CARD_Z_MAX;
     s_card_seq++;
-    draw_card_at(card_index, up, x, y, w, h, focused,
+    draw_card_at(card_index, up, level, x, y, w, h, focused,
                  CARD_Z_BASE + (float)seq * CARD_Z_STEP, g_battle.energy, angle);
 }
 
@@ -1487,7 +1489,7 @@ static void draw_shop_top(void) {
             if (sold) {
                 draw_shop_sold(cx, cy, w, h);
             } else {
-                draw_card(card, 0, cx - w * 0.5f, cy - h * 0.5f, w, h, 0);
+                draw_card(card, 0, 0, cx - w * 0.5f, cy - h * 0.5f, w, h, 0);
             }
         } else if (i < 10) {
             int id = g_map.shop_relic[i - 7];
@@ -1538,7 +1540,8 @@ static void draw_shop_top(void) {
 static void draw_purge_top(void) {
     int card = battle_deck_card(s_purge_focus);
     if (card >= 0) {
-        draw_card(card, battle_deck_up(s_purge_focus), 16.0f, 10.0f, 128.0f, 200.0f, 1);
+        draw_card(card, battle_deck_up(s_purge_focus), battle_deck_level(s_purge_focus),
+                  16.0f, 10.0f, 128.0f, 200.0f, 1);
         text_draw_wrapped(FS_SMALL, battle_deck_up(s_purge_focus) ? sts_cards[card].text_up : sts_cards[card].text,
                           164, 20, 220, 7, RGB(228, 218, 198));
     }
@@ -1565,7 +1568,7 @@ static void draw_shop(void) {
     if (sel < 7) {
         int card = shop_item_card(sel);
         if (card < 0) return;
-        draw_card(card, 0, 6.0f, 26.0f, 96.0f, 150.0f, 1);
+        draw_card(card, 0, 0, 6.0f, 26.0f, 96.0f, 150.0f, 1);
         text_draw(FS_MID, sts_cards[card].name, 112, 24, COL_INK);
         if (sold) {
             text_draw(FS_MID, "已售出", 112, 52, COL_DIM);
@@ -2507,8 +2510,8 @@ static void draw_bottom_fight(void) {
         hand_slot(i, &x, &y, &w, &h);
         float lift = 0.0f;
         if (is_drag) lift = (float)(s_drag.rise > 60 ? 60 : (s_drag.rise < 0 ? 0 : s_drag.rise));
-        draw_card_in_hand(battle_hand_card(i), battle_hand_up(i), x, y - lift, w, h,
-                          0, hand_angle(i));
+        draw_card_in_hand(battle_hand_card(i), battle_hand_up(i), battle_hand_level(i),
+                          x, y - lift, w, h, 0, hand_angle(i));
     }
 
     /* The fan outline stays clean: the focused card is marked by a small gold
@@ -2537,7 +2540,8 @@ static void draw_bottom_fight(void) {
         if (dy < 0) dy = 0;
         if (dy > BOT_H - 116) dy = BOT_H - 116;
         draw_card_at(battle_hand_card(s_drag.card), battle_hand_up(s_drag.card),
-                     (float)dx, (float)dy, 84.0f, 116.0f, 1, 0.72f, g_battle.energy, 0.0f);
+                     battle_hand_level(s_drag.card), (float)dx, (float)dy, 84.0f, 116.0f, 1,
+                     0.72f, g_battle.energy, 0.0f);
     }
 
     if (s_play_fx.active && s_play_fx.ttl > 0) {
@@ -2551,7 +2555,7 @@ static void draw_bottom_fight(void) {
             rect_frame(x - 3.0f, y - 3.0f, w + 6.0f, h + 6.0f, 2.0f,
                        RGB(250, 210, 130), 0.79f);
         }
-        draw_card_at(s_play_fx.card, s_play_fx.up, x, y, w, h, 1, 0.80f, -1, 0.0f);
+        draw_card_at(s_play_fx.card, s_play_fx.up, 0, x, y, w, h, 1, 0.80f, -1, 0.0f);
     }
 }
 
@@ -2600,7 +2604,7 @@ static void draw_reward_screen(void) {
     for (int i = 0; i < g_run.reward_count; i++) {
         int rx, ry;
         reward_rect(i, &rx, &ry);
-        draw_card(g_run.reward[i], 0, (float)rx, (float)ry, REWARD_W, REWARD_H, i == s_reward_focus);
+        draw_card(g_run.reward[i], 0, 0, (float)rx, (float)ry, REWARD_W, REWARD_H, i == s_reward_focus);
     }
 
     if (s_reward_focus >= 0 && s_reward_focus < g_run.reward_count) {
@@ -2690,10 +2694,10 @@ static void draw_upgrade_top(void) {
 
     int can_more = strcmp(c->id, "Searing Blow") == 0 || !up;
     text_draw(FS_SMALL, up ? "当前（已升级）" : "当前", 48, 30, COL_DIM);
-    draw_card(card, up, 36, 50, 110, 154, 1);
+    draw_card(card, up, level, 36, 50, 110, 154, 1);
     if (can_more && c->type <= 2) {
         text_draw(FS_SMALL, "升级后", 268, 30, COL_GOLD);
-        draw_card(card, 1, 254, 50, 110, 154, 1);
+        draw_card(card, 1, level + 1, 254, 50, 110, 154, 1);
         text_draw(FS_MID, "→", 190, 108, COL_LIT);
     } else {
         text_draw(FS_SMALL, "这张牌已经没有升级", 244, 108, COL_DIM);
@@ -2747,7 +2751,7 @@ static void draw_upgrade_screen(void) {
         upgrade_card_rect(i - first, &rx, &ry);
         int card_index = battle_deck_card(i);
         int up = battle_deck_up(i);
-        draw_card(card_index, up, (float)rx, (float)ry, 54, 76, i == s_upgrade_focus);
+        draw_card(card_index, up, battle_deck_level(i), (float)rx, (float)ry, 54, 76, i == s_upgrade_focus);
         if (up) {
             rect_fill((float)rx, (float)ry, 54, 12, RGBA(8, 8, 10, 170), 0.7f);
             text_draw_depth(FS_SMALL, "已升级", (float)rx + 6, (float)ry + 1, COL_DIM, 0.72f);
@@ -2848,7 +2852,7 @@ static void draw_pick_top(void) {
     for (int i = first; i < first + per && i < count; i++) {
         float x, y, w, h;
         pick_card_box(i - first, mode, &x, &y, &w, &h);
-        draw_card(battle_pick_card(i), battle_pick_up(i), x, y, w, h, i == s_pick_sel);
+        draw_card(battle_pick_card(i), battle_pick_up(i), 0, x, y, w, h, i == s_pick_sel);
         if (battle_pick_multi() && battle_pick_marked(i)) {
             rect_fill(x + w - 14.0f, y + 2.0f, 12.0f, 12.0f, RGB(110, 180, 110), 0.35f);
         }
