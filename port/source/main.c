@@ -329,7 +329,7 @@ static int in_end_turn(int px, int py) {
 }
 
 static int in_status_button(int px, int py) {
-    return px >= 150 && px < 214 && py >= 8 && py < 42;
+    return px >= 194 && px < 226 && py >= 8 && py < 44;
 }
 
 static int reward_rect(int index, int *rx, int *ry) {
@@ -617,8 +617,10 @@ static void update_hud_anim(void) {
     s_hud_dt = dt;
     s_hud_tick = now;
 
-    static const float lit_speed[5] = {360.0f, 40.0f, -40.0f, 20.0f, -20.0f};
-    static const float dim_speed[5] = {72.0f, 8.0f, -8.0f, 5.0f, -5.0f};
+    /* The vanilla orb idles: a full turn of the outer swirl takes seconds, not
+     * the one-second spin this used to run at. */
+    static const float lit_speed[5] = {60.0f, 15.0f, -15.0f, 8.0f, -8.0f};
+    static const float dim_speed[5] = {18.0f, 5.0f, -5.0f, 3.0f, -3.0f};
     int empty = g_battle.energy <= 0;
     for (int i = 0; i < 5; i++) {
         s_orb_angle[i] += (empty ? dim_speed[i] : lit_speed[i]) * dt;
@@ -2481,30 +2483,11 @@ static void draw_bottom_fight(void) {
     snprintf(buf, sizeof(buf), "弃 %d", g_battle.discard_count);
     text_draw(FS_SMALL, buf, 62, 26, COL_DIM);
 
-    /* The status button wears the game's own Weak icon; the stack count rides on
-     * its corner and pressing it still opens the status list. */
-    rect_fill(150, 8, 64, 34, s_detail ? RGB(90, 74, 40) : RGB(46, 40, 32), 0.3f);
-    rect_frame(150, 8, 64, 34, 1.5f, s_detail ? COL_LIT : RGB(120, 104, 78), 0.31f);
-    if (s_combat_tex) {
-        C2D_Image icon = {s_combat_tex, &s_cb_power[STS_POWER_WEAK]};
-        C2D_ImageTint tint;
-        C2D_PlainImageTint(&tint, g_battle.weak > 0 ? C2D_Color32f(1, 1, 1, 1)
-                                                    : C2D_Color32f(1, 1, 1, 0.55f), 1.0f);
-        C2D_DrawImageAt(icon, 169, 12, 0.33f, &tint, 26.0f / 48.0f, 26.0f / 48.0f);
-        if (g_battle.weak > 0) {
-            snprintf(buf, sizeof(buf), "%d", g_battle.weak);
-            float tw = text_width(FS_SMALL, buf);
-            float tx = 169 + 26.0f - tw;
-            float ty = 10.0f;
-            for (int oy = -1; oy <= 1; oy++) {
-                for (int ox = -1; ox <= 1; ox++) {
-                    if (!ox && !oy) continue;
-                    text_draw_depth(FS_SMALL, buf, tx + (float)ox, ty + (float)oy,
-                                    RGB(18, 16, 14), 0.334f);
-                }
-            }
-            text_draw_depth(FS_SMALL, buf, tx, ty, RGB(226, 150, 150), 0.335f);
-        }
+    /* Status button: the game's own "debuff" intent icon, parked just left of the
+     * end-turn hexagon.  It is a plain button -- no counters, no state changes. */
+    if (s_vis_tex) {
+        C2D_Image icon = {s_vis_tex, &s_intent[6]};
+        C2D_DrawImageAt(icon, 196.0f, 12.0f, 0.33f, NULL, 28.0f / 24.0f, 28.0f / 24.0f);
     }
 
     draw_end_turn_button();
