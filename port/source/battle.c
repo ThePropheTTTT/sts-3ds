@@ -392,6 +392,20 @@ static const EnemyMove CULTIST_MOVES[] = {
     {MOVE_RITUAL, 3, 0, 0},     /* Incantation: Ritual 3 */
     {MOVE_ATTACK, 6, 0, 0},     /* Dark Strike */
 };
+/* AcidSlime_S.java: Tackle and Lick strictly alternate. */
+static const EnemyMove ACID_S_MOVES[] = {
+    {MOVE_ATTACK, 3, 0, 0},     /* Tackle */
+    {MOVE_WEAK, 1, 0, 0},       /* Lick: 1 Weak */
+};
+/* SpikeSlime_S.java has a single move, Tackle, on every turn. */
+static const EnemyMove SPIKE_S_MOVES[] = {
+    {MOVE_ATTACK, 5, 0, 0},     /* Tackle */
+};
+/* SpikeSlime_M.java: Flame Tackle (8 + a 黏液) or Frail Lick. */
+static const EnemyMove SPIKE_M_MOVES[] = {
+    {MOVE_SLIME, 8, 1, 0},      /* Flame Tackle */
+    {MOVE_FRAIL, 1, 0, 0},      /* Frail Lick */
+};
 /* Act 2 normal monsters.  The move ids are the game's own ids shifted to
  * table indexes; the comments name the vanilla id. */
 static const EnemyMove BYRD_MOVES[] = {
@@ -744,6 +758,26 @@ static void choose_move_roll(Enemy *e, unsigned int roll) {
             if (last_two(e, 2)) e->move_index = (rnd() % 100) < 40 ? 1 : 0;
             else e->move_index = 2;
         }
+        return;
+    }
+
+    if (e->moves == ACID_S_MOVES) {
+        /* AcidSlime_S.getMove: the first roll is a coin flip, and from then on
+         * the two moves simply alternate (it never picks the same move twice). */
+        if (e->last_move > 1) e->move_index = (roll & 1) ? 1 : 0;
+        else e->move_index = e->last_move == 0 ? 1 : 0;
+        return;
+    }
+    if (e->moves == SPIKE_S_MOVES) {
+        /* SpikeSlime_S.getMove always returns Tackle. */
+        e->move_index = 0;
+        return;
+    }
+    if (e->moves == SPIKE_M_MOVES) {
+        /* 0 Flame Tackle, 1 Frail Lick: a 30% roll prefers Flame Tackle, and
+         * neither move may run three times. */
+        if (roll < 30) e->move_index = last_two(e, 0) ? 1 : 0;
+        else e->move_index = last_two(e, 1) ? 0 : 1;
         return;
     }
 
@@ -1431,6 +1465,42 @@ static void setup_act1_louses(int count) {
     g_battle.enemy_count = (unsigned char)count;
     for (int i = 0; i < count; i++) setup_act1_louse(i, (int)(battle_rand() & 1));
     for (int i = 0; i < count; i++) choose_move(&g_battle.enemies[i]);
+}
+
+/* Small and medium slimes.  MonsterHelper.spawnSmallSlimes()
+ * (MonsterHelper.java:688-698) pairs one small slime with the medium slime of
+ * the other colour, picked by a coin flip.  The two colours share their
+ * display names, so Enemy.art carries the sprite key the HUD looks up. */
+static void setup_act1_slime_s(int slot, int acid) {
+    add_enemy(slot, acid ? "酸液史莱姆" : "尖刺史莱姆",
+              acid ? 8 + (int)(battle_rand() % 5) : 10 + (int)(battle_rand() % 5));
+    Enemy *e = &g_battle.enemies[slot];
+    e->art = acid ? "小酸液史莱姆" : "小尖刺史莱姆";
+    e->moves = acid ? ACID_S_MOVES : SPIKE_S_MOVES;
+    e->move_count = acid ? 2 : 1;
+    e->last_move = 255;
+    e->last_before = 255;
+}
+
+static void setup_act1_slime_m(int slot, int acid) {
+    add_enemy(slot, acid ? "酸液史莱姆" : "尖刺史莱姆", 28 + (int)(battle_rand() % 5));
+    Enemy *e = &g_battle.enemies[slot];
+    e->moves = acid ? SLIME_MOVES : SPIKE_M_MOVES;
+    e->move_count = acid ? 3 : 2;
+    e->last_move = 255;
+    e->last_before = 255;
+}
+
+static void setup_act1_small_slimes(void) {
+    g_battle.enemy_count = 2;
+    if (battle_rand() & 1) {
+        setup_act1_slime_s(0, 0);       /* SpikeSlime_S */
+        setup_act1_slime_m(1, 1);       /* AcidSlime_M  */
+    } else {
+        setup_act1_slime_s(0, 1);       /* AcidSlime_S  */
+        setup_act1_slime_m(1, 0);       /* SpikeSlime_M */
+    }
+    for (int i = 0; i < 2; i++) choose_move(&g_battle.enemies[i]);
 }
 
 static void setup_encounter(int kind) {
@@ -3609,6 +3679,24 @@ void battle_test_spawn_act1(int which) {
         g_map.row = 3;
         g_battle.enemy_count = 1;
         setup_act1_louse(0, which == 8);
+        choose_move(&g_battle.enemies[0]);
+    } else if (which == 9) {
+        g_map.row = 3;
+        setup_act1_small_slimes();
+    } else if (which == 10) {
+        g_map.row = 3;
+        g_battle.enemy_count = 1;
+        setup_act1_slime_m(0, 0);
+        choose_move(&g_battle.enemies[0]);
+    } else if (which == 11) {
+        g_map.row = 3;
+        g_battle.enemy_count = 1;
+        setup_act1_slime_s(0, 0);
+        choose_move(&g_battle.enemies[0]);
+    } else if (which == 12) {
+        g_map.row = 3;
+        g_battle.enemy_count = 1;
+        setup_act1_slime_s(0, 1);
         choose_move(&g_battle.enemies[0]);
     } else {
         g_map.row = 3;

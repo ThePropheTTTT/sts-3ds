@@ -2877,7 +2877,7 @@ void card_test_demo_fight(int which) {
      * 21 the Cultist, 22 two Louses, 23 three Louses.
      * Same spawn path the real encounter uses, then a hand so the bottom
      * screen has cards to draw. */
-    if (which < 0 || which > 23) which = 0;
+    if (which < 0 || which > 27) which = 0;
     if (which == 10) battle_test_spawn_act2(1);
     else if (which == 11) battle_test_spawn_act1(0);
     else if (which == 12) battle_test_spawn_act1(1);
@@ -2891,6 +2891,10 @@ void card_test_demo_fight(int which) {
     else if (which == 21) battle_test_spawn_act1(4);   /* the Cultist */
     else if (which == 22) battle_test_spawn_act1(5);   /* two Louses */
     else if (which == 23) battle_test_spawn_act1(6);   /* three Louses */
+    else if (which == 24) battle_test_spawn_act1(9);   /* the Small Slimes pair */
+    else if (which == 25) battle_test_spawn_act1(10);  /* SpikeSlime_M */
+    else if (which == 26) battle_test_spawn_act1(12);  /* AcidSlime_S */
+    else if (which == 27) battle_test_spawn_act1(11);  /* SpikeSlime_S */
     else if (which == 6) battle_test_spawn_slavers();
     else if (which == 7) {
         battle_test_spawn_automaton();
@@ -3437,6 +3441,100 @@ static void test_louse(void) {
 }
 
 
+static void test_slimes(void) {
+    /* MonsterHelper "Small Slimes": a coin flip decides which colour is small. */
+    battle_test_spawn_act1(9);
+    check("small slimes count", g_battle.enemy_count, 2);
+    Enemy *small = &g_battle.enemies[0];
+    Enemy *medium = &g_battle.enemies[1];
+    int small_acid = strcmp(small->art, "小酸液史莱姆") == 0;
+    check("small slime art", small_acid || strcmp(small->art, "小尖刺史莱姆") == 0, 1);
+    check("small slime name", small_acid ? strcmp(small->name, "酸液史莱姆") == 0
+                                         : strcmp(small->name, "尖刺史莱姆") == 0, 1);
+    check("small slime hp", small_acid ? (small->max_hp >= 8 && small->max_hp <= 12)
+                                       : (small->max_hp >= 10 && small->max_hp <= 14), 1);
+    check("medium slime hp", medium->max_hp >= 28 && medium->max_hp <= 32, 1);
+    check("medium slime pairs other colour", small_acid ? strcmp(medium->art, "尖刺史莱姆") == 0
+                                                        : strcmp(medium->art, "酸液史莱姆") == 0, 1);
+    check("medium move count", medium->move_count, small_acid ? 2 : 3);
+
+    /* AcidSlime_S: Tackle and Lick strictly alternate, never twice in a row. */
+    battle_test_spawn_act1(12);
+    Enemy *a = &g_battle.enemies[0];
+    check("acid small art", strcmp(a->art, "小酸液史莱姆"), 0);
+    check("acid small hp", a->max_hp >= 8 && a->max_hp <= 12, 1);
+    check("acid small moves", a->move_count, 2);
+    int first = a->moves[a->move_index].kind;
+    check("acid small opens with tackle or lick",
+          first == MOVE_ATTACK || first == MOVE_WEAK, 1);
+    battle_test_enemy_turn(0);
+    battle_test_choose_roll(0, 99);
+    int second = a->moves[a->move_index].kind;
+    check("acid small alternates", second != first, 1);
+    battle_test_enemy_turn(0);
+    battle_test_choose_roll(0, 99);
+    check("acid small alternates back", a->moves[a->move_index].kind, first);
+    /* The Tackle carries 3 and the Lick 1 Weak; one turn each, in either
+     * order, so only the Tackle lands damage. */
+    battle_test_spawn_act1(12);
+    Enemy *t = &g_battle.enemies[0];
+    for (int i = 0; i < 2; i++) {
+        if (t->moves[t->move_index].kind == MOVE_ATTACK)
+            check("acid small tackle damage", t->moves[t->move_index].value, 3);
+        battle_test_enemy_turn(0);
+    }
+    check("acid small tackle hits", g_battle.hp, 77);
+    check("acid small lick weakens", g_battle.weak, 1);
+
+    /* SpikeSlime_S: a single Tackle, 5 damage, every turn. */
+    battle_test_spawn_act1(11);
+    Enemy *s = &g_battle.enemies[0];
+    check("spike small art", strcmp(s->art, "小尖刺史莱姆"), 0);
+    check("spike small hp", s->max_hp >= 10 && s->max_hp <= 14, 1);
+    check("spike small moves", s->move_count, 1);
+    check("spike small always tackles", s->moves[0].kind, MOVE_ATTACK);
+    check("spike small damage", s->moves[0].value, 5);
+    battle_test_enemy_turn(0);
+    check("spike small hits", g_battle.hp, 75);
+
+    /* SpikeSlime_M: Flame Tackle (8 + a 黏液) or Frail Lick. */
+    battle_test_spawn_act1(10);
+    Enemy *m = &g_battle.enemies[0];
+    check("spike medium art", strcmp(m->art, "尖刺史莱姆"), 0);
+    check("spike medium hp", m->max_hp >= 28 && m->max_hp <= 32, 1);
+    check("spike medium moves", m->move_count, 2);
+    battle_test_choose_roll(0, 10);
+    check("flame tackle roll", m->moves[m->move_index].kind, MOVE_SLIME);
+    check("flame tackle damage", m->moves[m->move_index].value, 8);
+    int discard = g_battle.discard_count;
+    battle_test_enemy_turn(0);
+    check("flame tackle hits", g_battle.hp, 72);
+    check("flame tackle adds a slimed", g_battle.discard_count, discard + 1);
+    battle_test_choose_roll(0, 10);
+    check("flame tackle can follow itself", m->moves[m->move_index].kind, MOVE_SLIME);
+    battle_test_enemy_turn(0);
+    battle_test_choose_roll(0, 10);
+    check("no three flame tackles", m->moves[m->move_index].kind, MOVE_FRAIL);
+    battle_test_enemy_turn(0);
+    check("frail lick applies frail", g_battle.frail, 1);
+    check("frail lick no damage", g_battle.hp, 64);
+
+    /* The acid medium keeps the three-move table the act 1 placeholder used. */
+    battle_test_spawn_act1(2);
+    check("acid medium hp", g_battle.enemies[0].max_hp >= 28 && g_battle.enemies[0].max_hp <= 32, 1);
+    check("acid medium moves", g_battle.enemies[0].move_count, 3);
+
+    /* The report screen's slime demos. */
+    card_test_demo_fight(24);
+    check("small slimes demo count", g_battle.enemy_count, 2);
+    card_test_demo_fight(25);
+    check("spike medium demo alive", g_battle.enemies[0].hp > 0, 1);
+    card_test_demo_fight(26);
+    check("acid small demo art", strcmp(g_battle.enemies[0].art, "小酸液史莱姆"), 0);
+    card_test_demo_fight(27);
+    check("spike small demo art", strcmp(g_battle.enemies[0].art, "小尖刺史莱姆"), 0);
+}
+
 void card_test_run(void) {
     s_cases = 0;
     s_fails = 0;
@@ -3462,6 +3560,7 @@ void card_test_run(void) {
     test_batch18();
     test_cultist();
     test_louse();
+    test_slimes();
     g_run.screen = SCREEN_MAP;
     audio_sfx_mute(0);
 }

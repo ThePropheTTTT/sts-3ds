@@ -74,6 +74,10 @@ EXTRA_IMAGES = [
 # LouseDefensive (baked above as 红虱虫) is the red one.
 SPINE_EXTRA = [
     ("虱虫", "images/monsters/theBottom/louseGreen"),
+    # The small slimes reuse the medium slime's display name, so the sprite
+    # key lives on Enemy.art and these two cells complete the 32-cell page.
+    ("小酸液史莱姆", "images/monsters/theBottom/slimeS"),
+    ("小尖刺史莱姆", "images/monsters/theBottom/slimeAltS"),
 ]
 
 

@@ -50,12 +50,12 @@ static C2D_SpriteSheet s_act_sheets[3];
 static C2D_Image s_act_img[3];
 static C2D_SpriteSheet s_mon_sheet;
 static C2D_SpriteSheet s_mon_sheet_ref;
-static C2D_Image s_mon_img[30];
-static Tex3DS_SubTexture s_mon_subs[30];
+static C2D_Image s_mon_img[32];
+static Tex3DS_SubTexture s_mon_subs[32];
 
 /* 1024x512 page produced by tools/extract_monsters.py (8x4 cells of 96px).
  * NULL means the bake did not look right yet, so the placeholder box is used. */
-static const char *MON_KEYS[30] = {
+static const char *MON_KEYS[32] = {
     "球体守卫", "史莱姆老大", "勇者", "酸液史莱姆",
     "尖刺史莱姆", "颚虫", "地精大块头", "红虱虫",
     "真菌怪", "邪教徒", "寄生兽", "异鸟",
@@ -64,10 +64,11 @@ static const char *MON_KEYS[30] = {
     "铜制机械人偶", "收藏家", "火炬头",
     "地精首领", "火大地精", "卑鄙地精", "胖地精", "持盾地精", "地精法师",
     "铜球", "虱虫",
+    "小酸液史莱姆", "小尖刺史莱姆",
 };
 
 static int monster_slot(const char *name) {
-    for (int i = 0; i < 30; i++) {
+    for (int i = 0; i < 32; i++) {
         if (MON_KEYS[i] && strcmp(name, MON_KEYS[i]) == 0) return i;
     }
     return -1;
@@ -467,7 +468,7 @@ static void load_art(void) {
     if (s_mon_sheet) {
         C2D_Image img = C2D_SpriteSheetGetImage(s_mon_sheet, 0);
         s_vis_tex = s_vis_tex ? s_vis_tex : img.tex;
-        for (int i = 0; i < 30; i++) {
+        for (int i = 0; i < 32; i++) {
             C2D_Image one = {img.tex, NULL};
             Tex3DS_SubTexture *sub = &s_mon_subs[i];
             float x = (float)((i % 8) * 96);
@@ -4038,8 +4039,9 @@ int main(int argc, char **argv) {
              * Leader (9), act 3 background (10), then Slime Boss (11), Nob
              * (12), Acid Slimes (13), Jaw Worm (14), the split slimes (15),
              * then the last four powers on Acid Slimes (18), the Cultist (21),
-             * two Louses (22), three Louses (23), Purity's multi-select (19)
-             * and Forethought's bottom-pick (20).  The two
+             * two Louses (22), three Louses (23), the "Small Slimes" pairing
+             * (24), a spike slime and the two small slimes on their own (25-27),
+             * Purity's multi-select (19) and Forethought's bottom-pick (20).  The two
              * draw-pile pickers (16, 17) are skipped here: they end on
              * SCREEN_PICK, where B only cancels the picker, so B cannot cycle
              * past them. */
@@ -4047,7 +4049,7 @@ int main(int argc, char **argv) {
                 card_test_demo_fight(s_boss_demo);
                 s_boss_demo++;
                 if (s_boss_demo == 16 || s_boss_demo == 17) s_boss_demo = 18;
-                if (s_boss_demo > 23) s_boss_demo = 7;
+                if (s_boss_demo > 27) s_boss_demo = 7;
             }
         }
         update_play_fx();
