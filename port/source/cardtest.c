@@ -2877,7 +2877,7 @@ void card_test_demo_fight(int which) {
      * 21 the Cultist, 22 two Louses, 23 three Louses.
      * Same spawn path the real encounter uses, then a hand so the bottom
      * screen has cards to draw. */
-    if (which < 0 || which > 37) which = 0;
+    if (which < 0 || which > 38) which = 0;
     if (which == 10) battle_test_spawn_act2(1);
     else if (which == 11) battle_test_spawn_act1(0);
     else if (which == 12) battle_test_spawn_act1(1);
@@ -2905,6 +2905,7 @@ void card_test_demo_fight(int which) {
     else if (which == 35) battle_test_spawn_act1(20);  /* Red Slaver */
     else if (which == 36) battle_test_spawn_act1(21);  /* Exordium Thugs */
     else if (which == 37) battle_test_spawn_act1(22);  /* Exordium Wildlife */
+    else if (which == 38) battle_test_spawn_act1(23);  /* Lots of Slimes */
     else if (which == 6) battle_test_spawn_slavers();
     else if (which == 7) {
         battle_test_spawn_automaton();
@@ -3855,6 +3856,7 @@ static int encounter_enemies(int id) {
     case 9: return 2;   /* Exordium Wildlife */
     case 10: return 1;  /* Red Slaver */
     case 11: return 3;  /* 3 Louse */
+    case 12: return 5;  /* Lots of Slimes */
     default: return 0;
     }
 }
@@ -3874,7 +3876,7 @@ static void test_encounter_pool(void) {
         if (id == first) distinct_weak = 0;
         first = id;
     }
-    for (int n = 3; n < 12; n++) {
+    for (int n = 3; n < 13; n++) {
         if (weak_encounter(battle_test_encounter_id(n))) strong_ok = 0;
     }
     check("act 1 first rooms are weak", weak_ok, 1);
@@ -3882,13 +3884,13 @@ static void test_encounter_pool(void) {
     check("act 1 weak rooms differ", distinct_weak, 1);
 
     /* The queue is a pure function of the map seed, and neighbours differ. */
-    int ids[12];
-    for (int n = 0; n < 12; n++) ids[n] = battle_test_encounter_id(n);
+    int ids[13];
+    for (int n = 0; n < 13; n++) ids[n] = battle_test_encounter_id(n);
     int stable = 1, no_repeat = 1, bounds = 1;
-    for (int n = 0; n < 12; n++) {
+    for (int n = 0; n < 13; n++) {
         if (battle_test_encounter_id(n) != ids[n]) stable = 0;
         if (n > 0 && ids[n] == ids[n - 1]) no_repeat = 0;
-        if (ids[n] < 0 || ids[n] > 11) bounds = 0;
+        if (ids[n] < 0 || ids[n] > 12) bounds = 0;
     }
     check("act 1 pool is stable", stable, 1);
     check("act 1 pool does not repeat", no_repeat, 1);
@@ -3896,7 +3898,7 @@ static void test_encounter_pool(void) {
 
     g_map.map_seed = 0x7654321u;
     int differs = 0;
-    for (int n = 0; n < 12; n++) {
+    for (int n = 0; n < 13; n++) {
         if (battle_test_encounter_id(n) != ids[n]) differs = 1;
     }
     check("act 1 pool follows the seed", differs, 1);
@@ -3914,6 +3916,38 @@ static void test_encounter_pool(void) {
     battle_start(NODE_MONSTER);
     check("pool fight count", g_battle.enemy_count, encounter_enemies(battle_test_encounter_id(3)));
     check("pool fight has an enemy", g_battle.enemy_count >= 1, 1);
+}
+
+static void test_lots_of_slimes(void) {
+    /* MonsterHelper "Lots of Slimes": three SpikeSlime_S plus two AcidSlime_S,
+     * drawn without replacement, so the mix never varies, only the order. */
+    battle_test_spawn_act1(23);
+    check("lots count", g_battle.enemy_count, 5);
+    int spike = 0, acid = 0, hp_ok = 1, moves_ok = 1, art_ok = 1;
+    for (int i = 0; i < 5; i++) {
+        Enemy *e = &g_battle.enemies[i];
+        if (strcmp(e->name, "尖刺史莱姆") == 0) {
+            spike++;
+            if (e->max_hp < 10 || e->max_hp > 14) hp_ok = 0;
+            if (e->move_count != 1) moves_ok = 0;
+            if (strcmp(e->art, "小尖刺史莱姆") != 0) art_ok = 0;
+        } else {
+            acid++;
+            if (e->max_hp < 8 || e->max_hp > 12) hp_ok = 0;
+            if (e->move_count != 2) moves_ok = 0;
+            if (strcmp(e->art, "小酸液史莱姆") != 0) art_ok = 0;
+        }
+        if (e->moves[e->move_index].kind != MOVE_ATTACK && e->moves[e->move_index].kind != MOVE_WEAK)
+            moves_ok = 0;
+    }
+    check("lots spike count", spike, 3);
+    check("lots acid count", acid, 2);
+    check("lots hp ranges", hp_ok, 1);
+    check("lots move tables", moves_ok, 1);
+    check("lots sprite keys", art_ok, 1);
+
+    card_test_demo_fight(38);
+    check("lots demo count", g_battle.enemy_count, 5);
 }
 
 void card_test_run(void) {
@@ -3948,6 +3982,7 @@ void card_test_run(void) {
     test_looter();
     test_mixed_encounters();
     test_encounter_pool();
+    test_lots_of_slimes();
     g_run.screen = SCREEN_MAP;
     audio_sfx_mute(0);
 }

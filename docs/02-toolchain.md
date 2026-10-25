@@ -141,11 +141,13 @@ build/hello3ds.elf    1264668 bytes  EXEC / ARM / entry 0x100000
 第 1 幕普通怪不再由 `setup_encounter` 按层数挑固定组合，而是按 `MonsterHelper.java:832-847` 的两张表抽签（`battle.c` 的 `WEAK_POOL` / `STRONG_POOL` / `setup_act1_pool_encounter`）：
 
 - 前 3 场普通怪只从弱池取：蓝奴隶贩子、邪教徒、颚虫、两只虱虫、两只小史莱姆；
-- 第 4 场起从强池取：地精团、大史莱姆、掠夺者、Exordium Thugs、Exordium Wildlife、红奴隶贩子、三只虱虫；
+- 第 4 场起从强池取：地精团、大史莱姆、掠夺者、Exordium Thugs、Exordium Wildlife、红奴隶贩子、三只虱虫、五只小史莱姆；
 - 场次来自 `act1_monster_rooms()`，即地图上已经 `visited` 的 `NODE_MONSTER` 房间数（`map_enter` 在 `battle_start` 之前就标了 visited，所以当前这场本身也计入）；
 - 抽签用 `g_map.map_seed` + 幕数 + 弱/强池做种子，对该池做 Fisher-Yates 洗牌后按下标取，因此同一张地图的同一场次总是同一组怪（可用 `battle_test_encounter_id(n)` 在测试里复现），相邻场次不会重复同一格。
 
-已知缺口：`MonsterHelper` 的 "Lots of Slimes"（5 只小史莱姆）没有接——`Enemy enemies[4]` 只有 4 格，且 5 敌布局还没写；`Mugger` 只出现在第 2 幕的 "2 Thieves"；第 2/3 幕仍是 `setup_act2` 的脚本化摆位。
+`Enemy enemies[5]` 与 `main.c` 的五敌布局（48px 宽、`84 + i * 62`）就是为 Lots of Slimes 加的：它固定 3 只小尖刺 + 2 只小酸液（`MonsterHelper.spawnManySmallSlimes` 从 3+2 的池里不重复抽取），顺序随机。
+
+已知缺口：`Mugger` 只出现在第 2 幕的 "2 Thieves"；第 2/3 幕仍是 `setup_act2` 的脚本化摆位。
 
 ## 模拟器输入的边界
 
@@ -153,7 +155,7 @@ Azahar 的 `GRenderWindow::mousePressEvent` 会直接忽略 `Qt::MouseEventSynth
 
 为了在 CI 式截图里仍然覆盖这条路径，`CARD_TEST=1` 构建保留了合成触摸入口（仅测试构建编译，出货包不含）：
 
-- 报告屏按 `B` 循环全部战斗/选牌演示（Automaton → Collector → Gremlin Leader → 第 3 幕背景 → 第 1 幕 Boss 与普通怪（含邪教徒、两只/三只虱虫、Small Slimes 组合、尖刺/酸液小史莱姆与尖刺中史莱姆单只、两只真菌怪与单只真菌怪、地精团、大酸液/大尖刺史莱姆、掠夺者、蓝/红奴隶贩子单只、Exordium Thugs、Exordium Wildlife）→ 剩余 Power 卡 → Purity / Forethought 选牌），`SELECT` 从演示回到报告；
+- 报告屏按 `B` 循环全部战斗/选牌演示（Automaton → Collector → Gremlin Leader → 第 3 幕背景 → 第 1 幕 Boss 与普通怪（含邪教徒、两只/三只虱虫、Small Slimes 组合、尖刺/酸液小史莱姆与尖刺中史莱姆单只、两只真菌怪与单只真菌怪、地精团、大酸液/大尖刺史莱姆、掠夺者、蓝/红奴隶贩子单只、Exordium Thugs、Exordium Wildlife、五只小史莱姆的 Lots of Slimes）→ 剩余 Power 卡 → Purity / Forethought 选牌），`SELECT` 从演示回到报告；
 - 战斗屏按 `X` 从第三张牌开始拖动并把目标切到 0 号敌人槽，按 `Y` 在该目标上松手出牌，按 `B` 把手牌放回扇形取消。
 
 需要给奖励、篝火、升级这三个屏截图时，用同一套构建加 `UI_DEMO`（0 升级、1 奖励、2 篝火、3 True Grit+ 选牌、4 Searing Blow 升级屏、5 五张升级文本卡：Ghostly+/Forethought+/Searing+2/Discovery+/Burn+），启动后直接停在对应画面；标题屏用出货构建截：

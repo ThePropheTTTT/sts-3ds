@@ -1532,6 +1532,23 @@ static void setup_act1_slime_m(int slot, int acid) {
     e->last_before = 255;
 }
 
+/* MonsterHelper.spawnManySmallSlimes: three SpikeSlime_S and two AcidSlime_S
+ * drawn without replacement, so the mix is always 3 + 2 but the order is not. */
+static void setup_act1_lots_of_slimes(void) {
+    signed char pool[5] = {0, 0, 0, 1, 1};
+    for (int i = 4; i > 0; i--) {
+        int j = (int)(rnd() % (unsigned)(i + 1));
+        signed char tmp = pool[i];
+        pool[i] = pool[j];
+        pool[j] = tmp;
+    }
+    g_battle.enemy_count = 5;
+    for (int i = 0; i < 5; i++) {
+        setup_act1_slime_s(i, pool[i]);
+        choose_move(&g_battle.enemies[i]);
+    }
+}
+
 static void setup_act1_small_slimes(void) {
     g_battle.enemy_count = 2;
     if (battle_rand() & 1) {
@@ -1678,6 +1695,7 @@ enum {
     ENC_WILDLIFE,
     ENC_RED_SLAVER,
     ENC_THREE_LOUSE,
+    ENC_LOTS_OF_SLIMES,
 };
 
 static const unsigned char WEAK_POOL[] = {
@@ -1685,11 +1703,11 @@ static const unsigned char WEAK_POOL[] = {
 };
 static const unsigned char STRONG_POOL[] = {
     ENC_GREMLIN_GANG, ENC_LARGE_SLIME, ENC_LOOTER, ENC_THUGS,
-    ENC_WILDLIFE, ENC_RED_SLAVER, ENC_THREE_LOUSE,
+    ENC_WILDLIFE, ENC_RED_SLAVER, ENC_THREE_LOUSE, ENC_LOTS_OF_SLIMES,
 };
 
 #define WEAK_POOL_COUNT 5
-#define STRONG_POOL_COUNT 7
+#define STRONG_POOL_COUNT 8
 #define WEAK_POOL_FIGHTS 3
 
 /* Monster rooms the player has stood in this act, the current one included;
@@ -1747,6 +1765,9 @@ static void setup_act1_pool_encounter(int n) {
         break;
     case ENC_SMALL_SLIMES:
         setup_act1_small_slimes();
+        break;
+    case ENC_LOTS_OF_SLIMES:
+        setup_act1_lots_of_slimes();
         break;
     case ENC_GREMLIN_GANG:
         setup_act1_gremlin_gang();
@@ -2243,7 +2264,7 @@ static void resolve_pending_split(void) {
     /* AcidSlime_L / SpikeSlime_L: two medium slimes of the same colour, each
      * with the HP the large one had left (AcidSlime_L.java:128-129). */
     int slot_b = -1;
-    for (int s = 0; s < 4; s++) {
+    for (int s = 0; s < 5; s++) {
         if (s == index) continue;
         if (s >= g_battle.enemy_count || g_battle.enemies[s].hp <= 0) { slot_b = s; break; }
     }
@@ -4112,6 +4133,9 @@ void battle_test_spawn_act1(int which) {
     } else if (which == 22) {
         g_map.row = 4;
         setup_act1_wildlife();
+    } else if (which == 23) {
+        g_map.row = 4;
+        setup_act1_lots_of_slimes();
     } else {
         g_map.row = 3;
         setup_encounter(NODE_MONSTER);

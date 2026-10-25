@@ -74,18 +74,20 @@ static int monster_slot(const char *name) {
     return -1;
 }
 
-/* Up to four enemies share the top screen.  Narrower boxes keep all four
- * inside 400px; the Gremlin Leader fight and summoned enemies carry their own
- * positions from battle.c. */
+/* Up to five enemies share the top screen (Lots of Slimes).  Narrower boxes
+ * keep all five inside 400px; the Gremlin Leader fight and summoned enemies
+ * carry their own positions from battle.c. */
 static float enemy_w(int i) {
     if (i >= 0 && i < g_battle.enemy_count && g_battle.enemies[i].draw_w > 0)
         return (float)g_battle.enemies[i].draw_w;
+    if (g_battle.enemy_count >= 5) return 48.0f;
     if (g_battle.enemy_count >= 4) return 54.0f;
     return g_battle.enemy_count >= 3 ? 64.0f : (float)ENEMY_W;
 }
 static float enemy_x(int i) {
     if (i >= 0 && i < g_battle.enemy_count && g_battle.enemies[i].draw_x > 0)
         return (float)g_battle.enemies[i].draw_x;
+    if (g_battle.enemy_count >= 5) return 84.0f + (float)i * 62.0f;
     if (g_battle.enemy_count >= 4) return 120.0f + (float)i * 68.0f;
     if (g_battle.enemy_count >= 3) return 152.0f + (float)i * 84.0f;
     return (float)(ENEMY_X0 + i * ENEMY_DX);
@@ -1882,7 +1884,7 @@ typedef struct {
 static Floater s_floaters[FLOATER_MAX];
 static int s_fl_next;
 static struct { int hp, block, valid; } s_prev_player;
-static struct { int hp, block, valid; } s_prev_enemy[4];
+static struct { int hp, block, valid; } s_prev_enemy[5];
 
 #define PLAYER_BOX_X 36.0f
 
@@ -1915,7 +1917,7 @@ static void update_floaters(void) {
 
     if (g_run.screen != SCREEN_FIGHT) {
         s_prev_player.valid = 0;
-        for (int i = 0; i < 4; i++) s_prev_enemy[i].valid = 0;
+        for (int i = 0; i < 5; i++) s_prev_enemy[i].valid = 0;
         return;
     }
     /* Block that simply expires at the start of a turn is not a block hit: the
@@ -1940,7 +1942,7 @@ static void update_floaters(void) {
         s_prev_player.block = g_battle.block;
     }
 
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 5; i++) {
         int alive = i < g_battle.enemy_count && g_battle.enemies[i].hp > 0;
         int hp = alive ? g_battle.enemies[i].hp : 0;
         int blk = alive ? g_battle.enemies[i].block : 0;
@@ -2421,7 +2423,15 @@ static void draw_fight_top(void) {
             if (ix < 2.0f) ix = 2.0f;
         }
         text_draw(FS_SMALL, intent, intent[0] ? ix : x + 2, iy, intent_color);
-        text_draw(FS_SMALL, e->name, x, 84, COL_DIM);
+        /* Five-node fights fit 48px per box; the font has no scale knob, so the
+         * small slimes use a two-character label there (the status list still
+         * spells out the full name). */
+        const char *label = e->name;
+        if (g_battle.enemy_count >= 5 && e->art) {
+            if (strcmp(e->art, "小尖刺史莱姆") == 0) label = "尖刺";
+            else if (strcmp(e->art, "小酸液史莱姆") == 0) label = "酸液";
+        }
+        text_draw(FS_SMALL, label, x, 84, COL_DIM);
         draw_entity_box(x, ew, e->hp, e->max_hp, e->block, lit, RGB(60, 56, 46));
         int slot = monster_slot(e->art ? e->art : e->name);
         if (slot >= 0 && s_mon_img[slot].tex) {
@@ -4069,7 +4079,9 @@ int main(int argc, char **argv) {
              * two Louses (22), three Louses (23), the "Small Slimes" pairing
              * (24), a spike slime and the two small slimes on their own (25-27),
              * two Fungi Beasts (28), one on its own (29), the Gremlin Gang
-             * (30), Purity's
+             * (30), the large Acid/Spike Slimes (31, 32), the Looter (33),
+             * the lone Blue and Red Slavers (34, 35), Exordium Thugs (36),
+             * Exordium Wildlife (37), Lots of Slimes (38), Purity's
              * multi-select (19) and Forethought's bottom-pick (20).  The two
              * draw-pile pickers (16, 17) are skipped here: they end on
              * SCREEN_PICK, where B only cancels the picker, so B cannot cycle
@@ -4078,7 +4090,7 @@ int main(int argc, char **argv) {
                 card_test_demo_fight(s_boss_demo);
                 s_boss_demo++;
                 if (s_boss_demo == 16 || s_boss_demo == 17) s_boss_demo = 18;
-                if (s_boss_demo > 37) s_boss_demo = 7;
+                if (s_boss_demo > 38) s_boss_demo = 7;
             }
         }
         update_play_fx();

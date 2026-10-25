@@ -223,7 +223,7 @@ typedef struct {
     int turn;
     int phase;
     int enemy_count;
-    Enemy enemies[4];
+    Enemy enemies[5];
     unsigned int rng;
     int temp_strength;
     int pending_split;   /* enemy index waiting to split, -1 = none */   /* from Flex: removed at the end of the player turn */
