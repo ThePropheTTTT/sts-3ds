@@ -2877,7 +2877,7 @@ void card_test_demo_fight(int which) {
      * 21 the Cultist, 22 two Louses, 23 three Louses.
      * Same spawn path the real encounter uses, then a hand so the bottom
      * screen has cards to draw. */
-    if (which < 0 || which > 33) which = 0;
+    if (which < 0 || which > 37) which = 0;
     if (which == 10) battle_test_spawn_act2(1);
     else if (which == 11) battle_test_spawn_act1(0);
     else if (which == 12) battle_test_spawn_act1(1);
@@ -2901,6 +2901,10 @@ void card_test_demo_fight(int which) {
     else if (which == 31) battle_test_spawn_act1(16);  /* AcidSlime_L */
     else if (which == 32) battle_test_spawn_act1(17);  /* SpikeSlime_L */
     else if (which == 33) battle_test_spawn_act1(18);  /* Looter */
+    else if (which == 34) battle_test_spawn_act1(19);  /* Blue Slaver */
+    else if (which == 35) battle_test_spawn_act1(20);  /* Red Slaver */
+    else if (which == 36) battle_test_spawn_act1(21);  /* Exordium Thugs */
+    else if (which == 37) battle_test_spawn_act1(22);  /* Exordium Wildlife */
     else if (which == 6) battle_test_spawn_slavers();
     else if (which == 7) {
         battle_test_spawn_automaton();
@@ -3746,6 +3750,81 @@ static void test_looter(void) {
     check("looter demo name", strcmp(g_battle.enemies[0].name, "掠夺者"), 0);
 }
 
+static int name_in(const char *name, const char *const *list, int count) {
+    for (int i = 0; i < count; i++) {
+        if (strcmp(name, list[i]) == 0) return 1;
+    }
+    return 0;
+}
+
+/* MonsterHelper "Blue Slaver" / "Red Slaver" singles, plus the two mixed
+ * encounters that pair one weak slot with one strong slot. */
+static void test_mixed_encounters(void) {
+    static const char *weak_names[] = {"虱虫", "红虱虫", "尖刺史莱姆", "酸液史莱姆"};
+    static const char *strong_names[] = {"邪教徒", "奴隶贩子", "掠夺者"};
+    static const char *wild_names[] = {"真菌怪", "颚虫"};
+    battle_test_spawn_act1(19);
+    Enemy *e = &g_battle.enemies[0];
+    check("blue slaver hp", e->max_hp >= 46 && e->max_hp <= 50, 1);
+    check("blue slaver art", strcmp(e->art, "蓝奴隶贩子"), 0);
+    check("blue slaver moves", e->move_count, 2);
+    int kind = e->moves[e->move_index].kind;
+    check("blue slaver opens legally", kind == MOVE_ATTACK || kind == MOVE_ATTACK_WEAK, 1);
+    if (kind == MOVE_ATTACK) check("blue slaver stab 12", e->moves[e->move_index].value, 12);
+
+    battle_test_spawn_act1(20);
+    e = &g_battle.enemies[0];
+    check("red slaver hp", e->max_hp >= 46 && e->max_hp <= 50, 1);
+    check("red slaver art", strcmp(e->art, "红奴隶贩子"), 0);
+    check("red slaver moves", e->move_count, 3);
+    check("red slaver opens with stab", e->moves[e->move_index].kind, MOVE_ATTACK);
+    check("red slaver stab 13", e->moves[e->move_index].value, 13);
+
+    /* Exordium Thugs: weak wildlife left, strong humanoid right. */
+    int louse = 0, slime = 0, cultist = 0, slaver = 0, looter = 0, bad = 0;
+    for (int round = 0; round < 60; round++) {
+        battle_test_spawn_act1_seed(21, 0x9E3779B9u * (unsigned int)(round + 1));
+        if (g_battle.enemy_count != 2) bad++;
+        const char *left = g_battle.enemies[0].name;
+        const char *right = g_battle.enemies[1].name;
+        if (!name_in(left, weak_names, 4) || !name_in(right, strong_names, 3)) bad++;
+        if (strcmp(left, "虱虫") == 0 || strcmp(left, "红虱虫") == 0) louse++;
+        else slime++;
+        if (strcmp(right, "邪教徒") == 0) cultist++;
+        else if (strcmp(right, "奴隶贩子") == 0) slaver++;
+        else looter++;
+    }
+    check("thugs always two known foes", bad, 0);
+    check("thugs wildlife varies", louse > 0 && slime > 0, 1);
+    check("thugs humanoid varies", cultist > 0 && slaver > 0 && looter > 0, 1);
+
+    /* Exordium Wildlife: strong wildlife left, weak wildlife right. */
+    int strong_wild = 0, weak_wild_twice = 0;
+    bad = 0;
+    for (int round = 0; round < 60; round++) {
+        battle_test_spawn_act1_seed(22, 0x85EBCA6Bu * (unsigned int)(round + 1));
+        if (g_battle.enemy_count != 2) bad++;
+        if (!name_in(g_battle.enemies[0].name, wild_names, 2)) bad++;
+        if (!name_in(g_battle.enemies[1].name, weak_names, 4)) bad++;
+        if (strcmp(g_battle.enemies[0].name, "真菌怪") == 0) strong_wild = 1;
+        if (strcmp(g_battle.enemies[1].name, "虱虫") == 0 || strcmp(g_battle.enemies[1].name, "红虱虫") == 0)
+            weak_wild_twice |= 1;
+        else weak_wild_twice |= 2;
+    }
+    check("wildlife always two known foes", bad, 0);
+    check("wildlife has a strong slot", strong_wild, 1);
+    check("wildlife weak slot varies", weak_wild_twice, 3);
+
+    card_test_demo_fight(34);
+    check("blue slaver demo", strcmp(g_battle.enemies[0].art, "蓝奴隶贩子"), 0);
+    card_test_demo_fight(35);
+    check("red slaver demo", strcmp(g_battle.enemies[0].art, "红奴隶贩子"), 0);
+    card_test_demo_fight(36);
+    check("thugs demo", g_battle.enemy_count, 2);
+    card_test_demo_fight(37);
+    check("wildlife demo", g_battle.enemy_count, 2);
+}
+
 void card_test_run(void) {
     s_cases = 0;
     s_fails = 0;
@@ -3776,6 +3855,7 @@ void card_test_run(void) {
     test_gremlin_gang();
     test_large_slime();
     test_looter();
+    test_mixed_encounters();
     g_run.screen = SCREEN_MAP;
     audio_sfx_mute(0);
 }

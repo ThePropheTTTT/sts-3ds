@@ -4073,7 +4073,7 @@ int main(int argc, char **argv) {
                 card_test_demo_fight(s_boss_demo);
                 s_boss_demo++;
                 if (s_boss_demo == 16 || s_boss_demo == 17) s_boss_demo = 18;
-                if (s_boss_demo > 33) s_boss_demo = 7;
+                if (s_boss_demo > 37) s_boss_demo = 7;
             }
         }
         update_play_fx();

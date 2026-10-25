@@ -1461,14 +1461,13 @@ static void setup_act2(int kind) {
 /* Act 1 weak encounter: a single Cultist (MonsterHelper.java:836, the
  * CULTIST_ENC entry of the WEAK list).  The pool around it is still the
  * placeholder described below; this is its first real weak-pool monster. */
-static void setup_act1_cultist(void) {
-    add_enemy(0, "邪教徒", 48 + (int)(battle_rand() % 7));
-    Enemy *e = &g_battle.enemies[0];
+static void setup_act1_cultist(int slot) {
+    add_enemy(slot, "邪教徒", 48 + (int)(battle_rand() % 7));
+    Enemy *e = &g_battle.enemies[slot];
     e->moves = CULTIST_MOVES;
     e->move_count = 2;
     e->last_move = 255;
     e->last_before = 255;
-    g_battle.enemy_count = 1;
     choose_move(e);             /* the first roll is Incantation */
 }
 
@@ -1554,9 +1553,9 @@ static void setup_act1_gremlin_gang(void) {
 }
 
 /* MonsterHelper "Looter": 44-48 HP, mugs twice and then leaves. */
-static void setup_act1_looter(void) {
-    add_enemy(0, "掠夺者", 44 + (int)(battle_rand() % 5));
-    Enemy *e = &g_battle.enemies[0];
+static void setup_act1_looter(int slot) {
+    add_enemy(slot, "掠夺者", 44 + (int)(battle_rand() % 5));
+    Enemy *e = &g_battle.enemies[slot];
     e->moves = LOOTER_MOVES;
     e->move_count = 4;
     e->last_move = 255;
@@ -1590,6 +1589,66 @@ static void setup_act1_fungi_beasts(void) {
     setup_act1_fungi(0);
     setup_act1_fungi(1);
     for (int i = 0; i < 2; i++) choose_move(&g_battle.enemies[i]);
+}
+
+/* Jaw Worm (JawWorm.java): 40-44 HP, Chomp / Thrash / Bellow. */
+static void setup_act1_jaw_worm(int slot) {
+    add_enemy(slot, "颚虫", 40 + (int)(battle_rand() % 5));
+    Enemy *e = &g_battle.enemies[slot];
+    e->moves = JAW_WORM_MOVES;
+    e->move_count = 3;
+    e->last_move = 255;
+    e->last_before = 255;
+}
+
+/* SlaverBlue / SlaverRed on their own (MonsterHelper "Blue Slaver" and
+ * "Red Slaver"): 46-50 HP, blue stabs or rakes, red opens with Stab. */
+static void setup_act1_slaver(int slot, int red) {
+    add_enemy(slot, "奴隶贩子", 46 + (int)(battle_rand() % 5));
+    Enemy *e = &g_battle.enemies[slot];
+    e->art = red ? "红奴隶贩子" : "蓝奴隶贩子";
+    e->moves = red ? SLAVER_RED_MOVES : SLAVER_BLUE_MOVES;
+    e->move_count = red ? 3 : 2;
+    e->last_move = 255;
+    e->last_before = 255;
+    choose_move(e);              /* red: the scripted first-turn Stab */
+}
+
+/* MonsterHelper's weak / strong slots for the two mixed encounters. */
+static void setup_act1_weak_wildlife(int slot) {
+    int pick = battle_rand() % 3;
+    if (pick == 0) setup_act1_louse(slot, (int)(battle_rand() & 1));
+    else if (pick == 1) setup_act1_slime_m(slot, 0);   /* AcidSlime_M */
+    else setup_act1_slime_m(slot, 1);                  /* SpikeSlime_M */
+    choose_move(&g_battle.enemies[slot]);
+}
+
+static void setup_act1_strong_humanoid(int slot) {
+    int pick = battle_rand() % 3;
+    if (pick == 0) setup_act1_cultist(slot);
+    else if (pick == 1) setup_act1_slaver(slot, (int)(battle_rand() & 1));
+    else setup_act1_looter(slot);
+    /* Each of the three picks already rolled its opening move. */
+}
+
+static void setup_act1_strong_wildlife(int slot) {
+    if (battle_rand() & 1) setup_act1_fungi(slot);
+    else setup_act1_jaw_worm(slot);
+    choose_move(&g_battle.enemies[slot]);
+}
+
+/* MonsterHelper "Exordium Thugs": weak wildlife left, strong humanoid right. */
+static void setup_act1_thugs(void) {
+    g_battle.enemy_count = 2;
+    setup_act1_weak_wildlife(0);
+    setup_act1_strong_humanoid(1);
+}
+
+/* MonsterHelper "Exordium Wildlife": strong wildlife left, weak right. */
+static void setup_act1_wildlife(void) {
+    g_battle.enemy_count = 2;
+    setup_act1_strong_wildlife(0);
+    setup_act1_weak_wildlife(1);
 }
 
 static void setup_encounter(int kind) {
@@ -1627,7 +1686,8 @@ static void setup_encounter(int kind) {
     /* The weak-pool slice: one Cultist on the fourth row of the map.  The rest
      * of the pool (MonsterHelper.java:835-839) waits on the monsters it uses. */
     if (depth == 4) {
-        setup_act1_cultist();
+        g_battle.enemy_count = 1;
+        setup_act1_cultist(0);
         return;
     }
     if (depth <= 2 || depth > 7) {
@@ -3833,8 +3893,23 @@ void battle_test_spawn_act2_monster(int which) {
     setup_act2_monster(which);
 }
 
+static unsigned int s_test_spawn_seed;
+static int s_test_spawn_seeded;
+
+/* Test-only: spawn a line-up and give the RNG a known state afterwards, so a
+ * suite can sweep many rolls without depending on the zeroed battle state. */
+void battle_test_spawn_act1_seed(int which, unsigned int seed) {
+    s_test_spawn_seed = seed;
+    s_test_spawn_seeded = 1;
+    battle_test_spawn_act1(which);
+}
+
 void battle_test_spawn_act1(int which) {
     memset(&g_battle, 0, sizeof(g_battle));
+    if (s_test_spawn_seeded) {
+        g_battle.rng = s_test_spawn_seed;
+        s_test_spawn_seeded = 0;
+    }
     g_battle.hp = 80;
     g_battle.max_hp = 80;
     g_battle.energy = 3;
@@ -3903,7 +3978,21 @@ void battle_test_spawn_act1(int which) {
     } else if (which == 18) {
         g_map.row = 5;
         g_battle.enemy_count = 1;
-        setup_act1_looter();
+        setup_act1_looter(0);
+    } else if (which == 19) {
+        g_map.row = 4;
+        g_battle.enemy_count = 1;
+        setup_act1_slaver(0, 0);
+    } else if (which == 20) {
+        g_map.row = 4;
+        g_battle.enemy_count = 1;
+        setup_act1_slaver(0, 1);
+    } else if (which == 21) {
+        g_map.row = 4;
+        setup_act1_thugs();
+    } else if (which == 22) {
+        g_map.row = 4;
+        setup_act1_wildlife();
     } else {
         g_map.row = 3;
         setup_encounter(NODE_MONSTER);

@@ -332,6 +332,7 @@ void battle_test_spawn_slavers(void);
 void battle_test_spawn_act2_monster(int which);
 /* 0 Slime Boss, 1 Gremlin Nob, 2 two Acid Slimes (M), 3 Jaw Worm. */
 void battle_test_spawn_act1(int which);
+void battle_test_spawn_act1_seed(int which, unsigned int seed);
 /* Drops the Slime Boss to half HP and resolves the split. */
 void battle_test_split_boss(void);
 void battle_test_split(void);
