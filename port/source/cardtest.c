@@ -2877,7 +2877,7 @@ void card_test_demo_fight(int which) {
      * 21 the Cultist, 22 two Louses, 23 three Louses.
      * Same spawn path the real encounter uses, then a hand so the bottom
      * screen has cards to draw. */
-    if (which < 0 || which > 27) which = 0;
+    if (which < 0 || which > 29) which = 0;
     if (which == 10) battle_test_spawn_act2(1);
     else if (which == 11) battle_test_spawn_act1(0);
     else if (which == 12) battle_test_spawn_act1(1);
@@ -2895,6 +2895,8 @@ void card_test_demo_fight(int which) {
     else if (which == 25) battle_test_spawn_act1(10);  /* SpikeSlime_M */
     else if (which == 26) battle_test_spawn_act1(12);  /* AcidSlime_S */
     else if (which == 27) battle_test_spawn_act1(11);  /* SpikeSlime_S */
+    else if (which == 28) battle_test_spawn_act1(14);  /* two Fungi Beasts */
+    else if (which == 29) battle_test_spawn_act1(13);  /* one Fungi Beast */
     else if (which == 6) battle_test_spawn_slavers();
     else if (which == 7) {
         battle_test_spawn_automaton();
@@ -3535,6 +3537,55 @@ static void test_slimes(void) {
     check("spike small demo art", strcmp(g_battle.enemies[0].art, "小尖刺史莱姆"), 0);
 }
 
+static void test_fungi(void) {
+    /* FungiBeast: HP 22-28, Bite 6 and Grow 3, and a Spore Cloud on death. */
+    battle_test_spawn_act1(13);
+    Enemy *e = &g_battle.enemies[0];
+    check("fungi hp", e->max_hp >= 22 && e->max_hp <= 28, 1);
+    check("fungi art", strcmp(e->art, "真菌怪"), 0);
+    check("fungi moves", e->move_count, 2);
+    check("fungi spores", e->spores, 2);
+    int first = e->moves[e->move_index].kind;
+    check("fungi opens with bite or grow", first == MOVE_ATTACK || first == MOVE_BUFF, 1);
+
+    /* Two bites are allowed, a third is not; Grow is always 3 Strength. */
+    battle_test_choose_roll(0, 0);
+    check("fungi bite roll", e->moves[e->move_index].kind, MOVE_ATTACK);
+    check("fungi bite damage", e->moves[e->move_index].value, 6);
+    battle_test_enemy_turn(0);
+    battle_test_choose_roll(0, 0);
+    check("fungi bites again", e->moves[e->move_index].kind, MOVE_ATTACK);
+    battle_test_enemy_turn(0);
+    battle_test_choose_roll(0, 0);
+    check("fungi cannot bite three times", e->moves[e->move_index].kind, MOVE_BUFF);
+    battle_test_enemy_turn(0);
+    check("fungi grow strength", e->strength, 3);
+    battle_test_choose_roll(0, 0);
+    check("fungi bite after grow", e->moves[e->move_index].kind, MOVE_ATTACK);
+    battle_test_enemy_turn(0);
+    check("fungi buffed bite damage", g_battle.hp, 80 - 6 - 6 - 9);
+    /* A roll above 60 grows unless the last move was Grow (FungiBeast.java:102). */
+    battle_test_choose_roll(0, 90);
+    check("fungi high roll grows", e->moves[e->move_index].kind, MOVE_BUFF);
+    battle_test_enemy_turn(0);
+    battle_test_choose_roll(0, 90);
+    check("fungi grow cannot repeat", e->moves[e->move_index].kind, MOVE_ATTACK);
+
+    /* Spore Cloud: each dead beast gives the player 2 Vulnerable. */
+    battle_test_spawn_act1(14);
+    check("fungi pair count", g_battle.enemy_count, 2);
+    battle_test_damage_enemy(0, 99);
+    check("first beast spores", g_battle.vulnerable, 2);
+    battle_test_damage_enemy(1, 99);
+    check("second beast spores", g_battle.vulnerable, 4);
+
+    /* The report screen's fungi demos. */
+    card_test_demo_fight(28);
+    check("fungi demo count", g_battle.enemy_count, 2);
+    card_test_demo_fight(29);
+    check("fungi solo demo alive", g_battle.enemies[0].hp > 0, 1);
+}
+
 void card_test_run(void) {
     s_cases = 0;
     s_fails = 0;
@@ -3561,6 +3612,7 @@ void card_test_run(void) {
     test_cultist();
     test_louse();
     test_slimes();
+    test_fungi();
     g_run.screen = SCREEN_MAP;
     audio_sfx_mute(0);
 }

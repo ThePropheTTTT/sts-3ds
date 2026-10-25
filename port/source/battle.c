@@ -401,6 +401,11 @@ static const EnemyMove ACID_S_MOVES[] = {
 static const EnemyMove SPIKE_S_MOVES[] = {
     {MOVE_ATTACK, 5, 0, 0},     /* Tackle */
 };
+/* FungiBeast.java: Bite and Grow, with a Spore Cloud that fires on death. */
+static const EnemyMove FUNGI_MOVES[] = {
+    {MOVE_ATTACK, 6, 0, 0},     /* Bite */
+    {MOVE_BUFF, 3, 0, 0},       /* Grow: +3 Strength */
+};
 /* SpikeSlime_M.java: Flame Tackle (8 + a 黏液) or Frail Lick. */
 static const EnemyMove SPIKE_M_MOVES[] = {
     {MOVE_SLIME, 8, 1, 0},      /* Flame Tackle */
@@ -677,6 +682,7 @@ int battle_add_relic(int id) {
 
 static void apply_relics_on_start(void);
 static void debuff_enemy(int index, int weak, int vulnerable);
+static void player_gain_vulnerable(int n);
 
 /* Move selection, transcribed from the decompiled getMove() methods.
  * Ids are indexes into each enemy's move table. */
@@ -771,6 +777,13 @@ static void choose_move_roll(Enemy *e, unsigned int roll) {
     if (e->moves == SPIKE_S_MOVES) {
         /* SpikeSlime_S.getMove always returns Tackle. */
         e->move_index = 0;
+        return;
+    }
+    if (e->moves == FUNGI_MOVES) {
+        /* 0 Bite, 1 Grow: a 60% roll bites, and neither move may run three
+         * times in a row (FungiBeast.java:94-107). */
+        if (roll < 60) e->move_index = last_two(e, 0) ? 1 : 0;
+        else e->move_index = e->last_move == 1 ? 0 : 1;
         return;
     }
     if (e->moves == SPIKE_M_MOVES) {
@@ -1503,6 +1516,25 @@ static void setup_act1_small_slimes(void) {
     for (int i = 0; i < 2; i++) choose_move(&g_battle.enemies[i]);
 }
 
+/* FungiBeast.java: "2 Fungi Beasts" from the strong pool.  Each one carries a
+ * Spore Cloud that hands the player 2 Vulnerable when it dies. */
+static void setup_act1_fungi(int slot) {
+    add_enemy(slot, "真菌怪", 22 + (int)(battle_rand() % 7));
+    Enemy *e = &g_battle.enemies[slot];
+    e->moves = FUNGI_MOVES;
+    e->move_count = 2;
+    e->last_move = 255;
+    e->last_before = 255;
+    e->spores = 2;
+}
+
+static void setup_act1_fungi_beasts(void) {
+    g_battle.enemy_count = 2;
+    setup_act1_fungi(0);
+    setup_act1_fungi(1);
+    for (int i = 0; i < 2; i++) choose_move(&g_battle.enemies[i]);
+}
+
 static void setup_encounter(int kind) {
     int depth = g_map.row < 0 ? 0 : g_map.row;
     g_battle.enemy_count = 0;
@@ -1738,6 +1770,8 @@ static void on_enemy_death(int index) {
     Enemy *e = &g_battle.enemies[index];
     if (e->death_done) return;
     e->death_done = 1;
+    /* SporeCloudPower.onDeath: the cloud hits the player when the beast dies. */
+    if (e->spores > 0) player_gain_vulnerable(e->spores);
     if (e->stasis_card >= 0) {
         if (g_battle.hand_count < 10) {
             g_battle.hand[g_battle.hand_count++] = e->stasis_card;
@@ -3698,6 +3732,14 @@ void battle_test_spawn_act1(int which) {
         g_battle.enemy_count = 1;
         setup_act1_slime_s(0, 1);
         choose_move(&g_battle.enemies[0]);
+    } else if (which == 13) {
+        g_map.row = 3;
+        g_battle.enemy_count = 1;
+        setup_act1_fungi(0);
+        choose_move(&g_battle.enemies[0]);
+    } else if (which == 14) {
+        g_map.row = 3;
+        setup_act1_fungi_beasts();
     } else {
         g_map.row = 3;
         setup_encounter(NODE_MONSTER);

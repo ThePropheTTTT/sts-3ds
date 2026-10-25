@@ -4041,7 +4041,8 @@ int main(int argc, char **argv) {
              * then the last four powers on Acid Slimes (18), the Cultist (21),
              * two Louses (22), three Louses (23), the "Small Slimes" pairing
              * (24), a spike slime and the two small slimes on their own (25-27),
-             * Purity's multi-select (19) and Forethought's bottom-pick (20).  The two
+             * two Fungi Beasts (28) and one on its own (29), Purity's
+             * multi-select (19) and Forethought's bottom-pick (20).  The two
              * draw-pile pickers (16, 17) are skipped here: they end on
              * SCREEN_PICK, where B only cancels the picker, so B cannot cycle
              * past them. */
@@ -4049,7 +4050,7 @@ int main(int argc, char **argv) {
                 card_test_demo_fight(s_boss_demo);
                 s_boss_demo++;
                 if (s_boss_demo == 16 || s_boss_demo == 17) s_boss_demo = 18;
-                if (s_boss_demo > 27) s_boss_demo = 7;
+                if (s_boss_demo > 29) s_boss_demo = 7;
             }
         }
         update_play_fx();

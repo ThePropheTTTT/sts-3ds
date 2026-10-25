@@ -118,6 +118,7 @@ typedef struct {
     unsigned char ritual_skip;   /* RitualPower.skipFirst: the round it was applied in */
     unsigned char curl_up;       /* CurlUpPower block, gained the first time it is hit */
     unsigned char curl_done;     /* CurlUpPower: the one gain has fired */
+    unsigned char spores;        /* SporeCloudPower: Vulnerable handed to the player on death */
 
     unsigned char death_done;    /* on_death has already run for this enemy */
     unsigned char draw_w;        /* custom hitbox width, 0 = use the old layout */
