@@ -315,8 +315,17 @@ static void start_player_turn(void) {
             s_red_skull_on = 0;
         }
     }
-    if (g_battle.vulnerable > 0) g_battle.vulnerable--;
-    if (g_battle.weak > 0) g_battle.weak--;
+    /* VulnerablePower/WeakPower.atEndOfRound skip the round they were applied
+     * in, so a debuff an enemy lands during its turn still covers the player's
+     * next turn instead of evaporating before it is used. */
+    if (g_battle.vulnerable > 0) {
+        if (g_battle.vuln_just) g_battle.vuln_just = 0;
+        else g_battle.vulnerable--;
+    }
+    if (g_battle.weak > 0) {
+        if (g_battle.weak_just) g_battle.weak_just = 0;
+        else g_battle.weak--;
+    }
     /* FrailPower.atEndOfRound: skips the round it was applied in. */
     if (g_battle.frail > 0) {
         if (g_battle.frail_just) g_battle.frail_just = 0;
@@ -2034,11 +2043,17 @@ static int player_debuff_blocked(void) {
 }
 
 static void player_gain_weak(int n) {
-    if (n > 0 && !player_debuff_blocked()) g_battle.weak += n;
+    if (n > 0 && !player_debuff_blocked()) {
+        g_battle.weak += n;
+        g_battle.weak_just = 1;   /* WeakPower.justApplied */
+    }
 }
 
 static void player_gain_vulnerable(int n) {
-    if (n > 0 && !player_debuff_blocked()) g_battle.vulnerable += n;
+    if (n > 0 && !player_debuff_blocked()) {
+        g_battle.vulnerable += n;
+        g_battle.vuln_just = 1;   /* VulnerablePower.justApplied */
+    }
 }
 
 static void player_gain_frail(int n) {

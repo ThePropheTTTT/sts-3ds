@@ -3772,6 +3772,20 @@ static void test_mixed_encounters(void) {
     check("blue slaver opens legally", kind == MOVE_ATTACK || kind == MOVE_ATTACK_WEAK, 1);
     if (kind == MOVE_ATTACK) check("blue slaver stab 12", e->moves[e->move_index].value, 12);
 
+    /* Rake's Weak has to survive into the player's turn: WeakPower.atEndOfRound
+     * skips the round it was applied in. */
+    battle_test_spawn_act1(19);
+    e = &g_battle.enemies[0];
+    e->move_index = 1;
+    e->last_move = 255;
+    battle_test_enemy_turn(0);
+    check("blue slaver rake damage", g_battle.hp, 73);
+    check("blue slaver rake weak", g_battle.weak, 1);
+    battle_start_turn_for_test();
+    check("weak survives the first round end", g_battle.weak, 1);
+    battle_start_turn_for_test();
+    check("weak decays on the next round end", g_battle.weak, 0);
+
     battle_test_spawn_act1(20);
     e = &g_battle.enemies[0];
     check("red slaver hp", e->max_hp >= 46 && e->max_hp <= 50, 1);

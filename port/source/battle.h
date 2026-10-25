@@ -177,6 +177,8 @@ typedef struct {
     int strength;
     int vulnerable;
     int weak;
+    int vuln_just;       /* VulnerablePower.justApplied: skip the first decrement */
+    int weak_just;       /* WeakPower.justApplied: skip the first decrement */
     int frail;           /* FrailPower: card block is 25% lower */
     int frail_just;      /* FrailPower.justApplied: skip the first decrement */
     int hex;             /* HexPower: Dazed added per non-Attack card played */
