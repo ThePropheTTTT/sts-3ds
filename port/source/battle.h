@@ -63,6 +63,8 @@ enum {
     MOVE_CHARGE,         /* Gremlin Wizard: charge; at currentCharge 3 it blasts 25 */
     MOVE_PREP,           /* Slime Boss: the no-op Prep turn (UNKNOWN intent) */
     MOVE_FRAIL,          /* value = Frail on the player, no damage */
+    MOVE_RITUAL,         /* Cultist Incantation: value = Ritual stacks (Strength
+                          * gained at the end of every later round) */
 };
 
 /* Act 2 uses the same room chances as Act 1 (TheCity.java), so only the
@@ -111,6 +113,9 @@ typedef struct {
     unsigned char used_stasis;   /* BronzeOrb: STASIS is used exactly once */
     unsigned char used_ult;      /* Collector: Mega Debuff is used exactly once */
     unsigned char shackled;      /* GainStrengthPower: Strength restored at end of turn */
+    unsigned char ritual;        /* RitualPower stacks: Strength gained each round end */
+    unsigned char ritual_skip;   /* RitualPower.skipFirst: the round it was applied in */
+
     unsigned char death_done;    /* on_death has already run for this enemy */
     unsigned char draw_w;        /* custom hitbox width, 0 = use the old layout */
     signed char minion_owner;    /* BronzeOrb: index of its BronzeAutomaton */
@@ -321,6 +326,7 @@ void battle_test_spawn_act1(int which);
 void battle_test_split_boss(void);
 void battle_test_choose_roll(int index, unsigned int roll);
 void battle_test_enemy_turn(int index);
+void battle_test_end_of_round(void);
 void battle_test_apply_relics(void);
 void battle_test_bag_of_marbles(void);
 int battle_test_card_can_upgrade(int index);

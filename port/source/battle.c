@@ -386,6 +386,12 @@ static const EnemyMove ACID_L_MOVES[] = {
     {MOVE_ATTACK, 16, 0, 0},       /* Normal Tackle */
     {MOVE_WEAK, 2, 0, 0},          /* Lick: 2 Weak */
 };
+/* Cultist.java: first turn Incantation, then Dark Strike on every turn after
+ * that.  RitualPower adds its stacks at the end of each later round. */
+static const EnemyMove CULTIST_MOVES[] = {
+    {MOVE_RITUAL, 3, 0, 0},     /* Incantation: Ritual 3 */
+    {MOVE_ATTACK, 6, 0, 0},     /* Dark Strike */
+};
 /* Act 2 normal monsters.  The move ids are the game's own ids shifted to
  * table indexes; the comments name the vanilla id. */
 static const EnemyMove BYRD_MOVES[] = {
@@ -712,6 +718,12 @@ static void choose_gremlin_leader(Enemy *e, unsigned int roll) {
 }
 
 static void choose_move_roll(Enemy *e, unsigned int roll) {
+    if (e->moves == CULTIST_MOVES) {
+        /* Cultist.getMove: the first roll is Incantation, every later one is
+         * Dark Strike. */
+        e->move_index = e->first_turn ? 0 : 1;
+        return;
+    }
     if (e->moves == SLIME_MOVES) {
         /* 0 Tackle, 1 Corrosive Spit, 2 Lick */
         if (roll < 30) {
@@ -1371,6 +1383,20 @@ static void setup_act2(int kind) {
 }
 
 /* Line-ups depend on the node kind and on how deep the run is. */
+/* Act 1 weak encounter: a single Cultist (MonsterHelper.java:836, the
+ * CULTIST_ENC entry of the WEAK list).  The pool around it is still the
+ * placeholder described below; this is its first real weak-pool monster. */
+static void setup_act1_cultist(void) {
+    add_enemy(0, "邪教徒", 48 + (int)(battle_rand() % 7));
+    Enemy *e = &g_battle.enemies[0];
+    e->moves = CULTIST_MOVES;
+    e->move_count = 2;
+    e->last_move = 255;
+    e->last_before = 255;
+    g_battle.enemy_count = 1;
+    choose_move(e);             /* the first roll is Incantation */
+}
+
 static void setup_encounter(int kind) {
     int depth = g_map.row < 0 ? 0 : g_map.row;
     g_battle.enemy_count = 0;
@@ -1401,6 +1427,12 @@ static void setup_encounter(int kind) {
         nob->last_before = 255;
         g_battle.enemy_count = 1;
         choose_move(nob);
+        return;
+    }
+    /* The weak-pool slice: one Cultist on the fourth row of the map.  The rest
+     * of the pool (MonsterHelper.java:835-839) waits on the monsters it uses. */
+    if (depth == 4) {
+        setup_act1_cultist();
         return;
     }
     if (depth <= 2 || depth > 7) {
@@ -3356,6 +3388,12 @@ static void enemy_take_turn(int i) {
         case MOVE_FRAIL:
             player_gain_frail(move->value);
             break;
+        case MOVE_RITUAL:
+            /* RitualPower(this, amount, false): no Strength yet, the power
+             * adds it at the end of every round after this one. */
+            e->ritual = (unsigned char)move->value;
+            e->ritual_skip = 1;
+            break;
         default:
             break;
         }
@@ -3376,6 +3414,17 @@ static void enemy_take_turn(int i) {
     if (e->shackled > 0 && e->hp > 0) {
         e->strength += e->shackled;
         e->shackled = 0;
+    }
+}
+
+/* RitualPower.atEndOfRound: the round the power was applied in is skipped
+ * (skipFirst), and every round after that grants the stored Strength. */
+static void end_of_round_ritual(void) {
+    for (int i = 0; i < g_battle.enemy_count; i++) {
+        Enemy *e = &g_battle.enemies[i];
+        if (e->hp <= 0 || e->ritual == 0) continue;
+        if (e->ritual_skip) e->ritual_skip = 0;
+        else e->strength += e->ritual;
     }
 }
 
@@ -3400,6 +3449,7 @@ void battle_end_turn(void) {
         audio_sfx(AUDIO_SFX_DEFEAT);
         return;
     }
+    end_of_round_ritual();
     g_battle.phase = PHASE_PLAYER;
     start_player_turn();
 }
@@ -3501,6 +3551,9 @@ void battle_test_spawn_act1(int which) {
     } else if (which == 2) {
         g_map.row = 0;
         setup_encounter(NODE_MONSTER);
+    } else if (which == 4) {
+        g_map.row = 4;
+        setup_encounter(NODE_MONSTER);
     } else {
         g_map.row = 3;
         setup_encounter(NODE_MONSTER);
@@ -3529,6 +3582,8 @@ void battle_test_choose_roll(int index, unsigned int roll) {
     if (index < 0 || index >= g_battle.enemy_count) return;
     choose_move_roll(&g_battle.enemies[index], roll);
 }
+
+void battle_test_end_of_round(void) { end_of_round_ritual(); }
 
 void battle_test_enemy_turn(int index) {
     if (index < 0 || index >= g_battle.enemy_count) return;

@@ -2876,7 +2876,7 @@ void card_test_demo_fight(int which) {
      * of Acid Slimes, 19 Purity's multi-select, 20 Forethought's bottom-pick.
      * Same spawn path the real encounter uses, then a hand so the bottom
      * screen has cards to draw. */
-    if (which < 0 || which > 20) which = 0;
+    if (which < 0 || which > 21) which = 0;
     if (which == 10) battle_test_spawn_act2(1);
     else if (which == 11) battle_test_spawn_act1(0);
     else if (which == 12) battle_test_spawn_act1(1);
@@ -2887,6 +2887,7 @@ void card_test_demo_fight(int which) {
         battle_test_split_boss();
     }
     else if (which == 18) battle_test_spawn_act1(2);
+    else if (which == 21) battle_test_spawn_act1(4);   /* the Cultist */
     else if (which == 6) battle_test_spawn_slavers();
     else if (which == 7) {
         battle_test_spawn_automaton();
@@ -3308,6 +3309,52 @@ static void test_batch18(void) {
     check("forethought + free defend", g_battle.zero_once[defend], 1);
 }
 
+/* Act 1 Cultist (Cultist.java): Incantation first, Dark Strike afterwards,
+ * and RitualPower adding its 3 Strength at the end of every later round. */
+static void test_cultist(void) {
+    battle_test_spawn_act1(4);
+    check("cultist count", g_battle.enemy_count, 1);
+    check("cultist hp low", g_battle.enemies[0].max_hp >= 48, 1);
+    check("cultist hp high", g_battle.enemies[0].max_hp <= 54, 1);
+
+    Enemy *c = &g_battle.enemies[0];
+    const EnemyMove *m = &c->moves[c->move_index];
+    check("cultist opens with incantation", m->kind, MOVE_RITUAL);
+
+    battle_test_enemy_turn(0);
+    check("incantation no damage", g_battle.hp, 80);
+    check("incantation ritual stacks", g_battle.enemies[0].ritual, 3);
+    check("incantation skips first round", g_battle.enemies[0].ritual_skip, 1);
+    m = &g_battle.enemies[0].moves[g_battle.enemies[0].move_index];
+    check("cultist switches to dark strike", m->kind, MOVE_ATTACK);
+    check("dark strike base damage", m->value, 6);
+
+    battle_test_end_of_round();
+    check("ritual skip consumed", g_battle.enemies[0].ritual_skip, 0);
+    check("ritual no strength yet", g_battle.enemies[0].strength, 0);
+
+    battle_test_enemy_turn(0);
+    check("dark strike hits", g_battle.hp, 74);
+    battle_test_end_of_round();
+    check("ritual round two strength", g_battle.enemies[0].strength, 3);
+
+    battle_test_enemy_turn(0);
+    check("dark strike with ritual", g_battle.hp, 65);
+    battle_test_end_of_round();
+    check("ritual round three strength", g_battle.enemies[0].strength, 6);
+
+    /* A dead Cultist stops growing. */
+    battle_test_damage_enemy(0, 200);
+    battle_test_end_of_round();
+    check("dead cultist ritual stops", g_battle.enemies[0].strength, 6);
+
+    /* The report screen's demo must show the same Cultist. */
+    card_test_demo_fight(21);
+    check("cultist demo count", g_battle.enemy_count, 1);
+    check("cultist demo alive", g_battle.enemies[0].hp > 0, 1);
+    check("cultist demo intent", g_battle.enemies[0].moves[g_battle.enemies[0].move_index].kind, MOVE_RITUAL);
+}
+
 void card_test_run(void) {
     s_cases = 0;
     s_fails = 0;
@@ -3331,6 +3378,7 @@ void card_test_run(void) {
     test_batch16();
     test_batch17();
     test_batch18();
+    test_cultist();
     g_run.screen = SCREEN_MAP;
     audio_sfx_mute(0);
 }

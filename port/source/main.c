@@ -2360,6 +2360,11 @@ static void draw_fight_top(void) {
             snprintf(intent, sizeof(intent), "脆弱 %d", value);
             intent_color = RGB(200, 150, 240);
             break;
+        case MOVE_RITUAL:
+            /* Cultist Incantation: a BUFF intent whose stacks read "仪式". */
+            snprintf(intent, sizeof(intent), "仪式 %d", value);
+            intent_color = RGB(200, 180, 120);
+            break;
         default:
             intent[0] = 0;
             break;
@@ -2375,7 +2380,8 @@ static void draw_fight_top(void) {
                 icon = dmg <= 4 ? 0 : (dmg <= 9 ? 1 : (dmg <= 14 ? 2 : 3));
             } else if (kind == MOVE_BUFF || kind == MOVE_ANGER || kind == MOVE_FLY ||
                        kind == MOVE_SPAWN || kind == MOVE_REVIVE ||
-                       kind == MOVE_COMMAND || kind == MOVE_CHARGE) {
+                       kind == MOVE_COMMAND || kind == MOVE_CHARGE ||
+                       kind == MOVE_RITUAL) {
                 icon = 5;
             } else if (kind == MOVE_DEFEND || kind == MOVE_DEFEND_BUFF ||
                        kind == MOVE_SUPPORT || kind == MOVE_RALLY ||
@@ -4031,7 +4037,7 @@ int main(int argc, char **argv) {
             /* B cycles the set pieces: Automaton (7), Collector (8), Gremlin
              * Leader (9), act 3 background (10), then Slime Boss (11), Nob
              * (12), Acid Slimes (13), Jaw Worm (14), the split slimes (15),
-             * then the last four powers on Acid Slimes (18), Purity's
+             * then the last four powers on Acid Slimes (18), the Cultist (21), Purity's
              * multi-select (19) and Forethought's bottom-pick (20).  The two
              * draw-pile pickers (16, 17) are skipped here: they end on
              * SCREEN_PICK, where B only cancels the picker, so B cannot cycle
@@ -4040,7 +4046,7 @@ int main(int argc, char **argv) {
                 card_test_demo_fight(s_boss_demo);
                 s_boss_demo++;
                 if (s_boss_demo == 16 || s_boss_demo == 17) s_boss_demo = 18;
-                if (s_boss_demo > 20) s_boss_demo = 7;
+                if (s_boss_demo > 21) s_boss_demo = 7;
             }
         }
         update_play_fx();
