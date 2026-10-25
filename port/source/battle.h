@@ -88,6 +88,7 @@ typedef struct {
     int weak;
     int strength;
     const EnemyMove *moves;
+    EnemyMove own[2];         /* per-enemy table: the louse rolls its bite */
     unsigned char move_count;
     unsigned char move_index;
     unsigned char last_move;
@@ -115,6 +116,8 @@ typedef struct {
     unsigned char shackled;      /* GainStrengthPower: Strength restored at end of turn */
     unsigned char ritual;        /* RitualPower stacks: Strength gained each round end */
     unsigned char ritual_skip;   /* RitualPower.skipFirst: the round it was applied in */
+    unsigned char curl_up;       /* CurlUpPower block, gained the first time it is hit */
+    unsigned char curl_done;     /* CurlUpPower: the one gain has fired */
 
     unsigned char death_done;    /* on_death has already run for this enemy */
     unsigned char draw_w;        /* custom hitbox width, 0 = use the old layout */

@@ -2873,10 +2873,11 @@ void card_test_demo_fight(int which) {
      * Boss, 12 Gremlin Nob, 13 two Acid Slimes (M), 14 Jaw Worm, 15 the
      * Slime Boss' two split slimes, 16/17 the two draw-pile pickers, 18 the
      * last four powers (Panacea/Ghostly/Dark Shackles/Enlightenment) on a pair
-     * of Acid Slimes, 19 Purity's multi-select, 20 Forethought's bottom-pick.
+     * of Acid Slimes, 19 Purity's multi-select, 20 Forethought's bottom-pick,
+     * 21 the Cultist, 22 two Louses, 23 three Louses.
      * Same spawn path the real encounter uses, then a hand so the bottom
      * screen has cards to draw. */
-    if (which < 0 || which > 21) which = 0;
+    if (which < 0 || which > 23) which = 0;
     if (which == 10) battle_test_spawn_act2(1);
     else if (which == 11) battle_test_spawn_act1(0);
     else if (which == 12) battle_test_spawn_act1(1);
@@ -2888,6 +2889,8 @@ void card_test_demo_fight(int which) {
     }
     else if (which == 18) battle_test_spawn_act1(2);
     else if (which == 21) battle_test_spawn_act1(4);   /* the Cultist */
+    else if (which == 22) battle_test_spawn_act1(5);   /* two Louses */
+    else if (which == 23) battle_test_spawn_act1(6);   /* three Louses */
     else if (which == 6) battle_test_spawn_slavers();
     else if (which == 7) {
         battle_test_spawn_automaton();
@@ -3355,6 +3358,85 @@ static void test_cultist(void) {
     check("cultist demo intent", g_battle.enemies[0].moves[g_battle.enemies[0].move_index].kind, MOVE_RITUAL);
 }
 
+static void test_louse(void) {
+    /* MonsterHelper "2 Louse": each louse rolls normal or defensive. */
+    battle_test_spawn_act1(5);
+    check("louse pair count", g_battle.enemy_count, 2);
+    for (int i = 0; i < 2; i++) {
+        Enemy *e = &g_battle.enemies[i];
+        check("louse own table", e->moves == e->own, 1);
+        check("louse move count", e->move_count, 2);
+        check("louse hp range", e->max_hp >= 10 && e->max_hp <= 17, 1);
+        check("louse name", strcmp(e->name, "虱虫") == 0 || strcmp(e->name, "红虱虫") == 0, 1);
+        check("louse curl range", e->curl_up >= 3 && e->curl_up <= 7, 1);
+        int kind = e->moves[e->move_index].kind;
+        check("louse opening move", kind == MOVE_ATTACK || kind == MOVE_BUFF || kind == MOVE_WEAK, 1);
+    }
+
+    /* LouseNormal: a 75% roll bites, a 25% roll strengthens, and the bite
+     * carries whatever Strength has piled up. */
+    battle_test_spawn_act1(7);
+    Enemy *e = &g_battle.enemies[0];
+    check("green louse name", strcmp(e->name, "虱虫"), 0);
+    check("green louse hp low", e->hp >= 10 && e->hp <= 15, 1);
+    battle_test_choose_roll(0, 99);
+    check("louse bite roll", e->moves[e->move_index].kind, MOVE_ATTACK);
+    int bite = e->moves[e->move_index].value;
+    check("louse bite range", bite >= 5 && bite <= 7, 1);
+    battle_test_enemy_turn(0);
+    check("louse bite hits", g_battle.hp, 80 - bite);
+    check("louse bite no strength", e->strength, 0);
+    battle_test_choose_roll(0, 0);
+    check("louse buff roll", e->moves[e->move_index].kind, MOVE_BUFF);
+    check("louse strengthen amount", e->moves[e->move_index].value, 3);
+    battle_test_enemy_turn(0);
+    check("louse strength up", e->strength, 3);
+    check("strengthen no damage", g_battle.hp, 80 - bite);
+    battle_test_choose_roll(0, 99);
+    battle_test_enemy_turn(0);
+    check("buffed bite hits", g_battle.hp, 80 - bite - bite - 3);
+
+    /* CurlUpPower: the first hit that gets through grants its block after the
+     * damage, so the hit itself is not soaked. */
+    battle_test_spawn_act1(7);
+    e = &g_battle.enemies[0];
+    int hp = e->hp;
+    int curl = e->curl_up;
+    check("curl ready", curl >= 3 && curl <= 7, 1);
+    battle_test_damage_enemy(0, 2);
+    check("curl grants block", e->block, curl);
+    check("curl does not soak its trigger", e->hp, hp - 2);
+    battle_test_damage_enemy(0, 2);
+    check("curl blocks the next hit", e->hp, hp - 2);
+    check("curl block spent", e->block, curl - 2);
+    /* A lethal hit never fires it. */
+    battle_test_spawn_act1(7);
+    battle_test_damage_enemy(0, 99);
+    check("dead louse no curl", g_battle.enemies[0].block, 0);
+
+    /* LouseDefensive: same script, but the second move Weakens instead. */
+    battle_test_spawn_act1(8);
+    Enemy *d = &g_battle.enemies[0];
+    check("red louse name", strcmp(d->name, "红虱虫"), 0);
+    check("red louse hp low", d->hp >= 11 && d->hp <= 17, 1);
+    battle_test_choose_roll(0, 0);
+    check("louse weaken roll", d->moves[d->move_index].kind, MOVE_WEAK);
+    check("louse weaken amount", d->moves[d->move_index].value, 2);
+    battle_test_enemy_turn(0);
+    check("louse weakness applied", g_battle.weak, 2);
+    check("weaken no damage", g_battle.hp, 80);
+
+    /* MonsterHelper "3 Louse", and the report screen's two louse demos. */
+    battle_test_spawn_act1(6);
+    check("louse trio count", g_battle.enemy_count, 3);
+    card_test_demo_fight(22);
+    check("louse demo count", g_battle.enemy_count, 2);
+    check("louse demo alive", g_battle.enemies[0].hp > 0, 1);
+    card_test_demo_fight(23);
+    check("louse trio demo count", g_battle.enemy_count, 3);
+}
+
+
 void card_test_run(void) {
     s_cases = 0;
     s_fails = 0;
@@ -3379,6 +3461,7 @@ void card_test_run(void) {
     test_batch17();
     test_batch18();
     test_cultist();
+    test_louse();
     g_run.screen = SCREEN_MAP;
     audio_sfx_mute(0);
 }

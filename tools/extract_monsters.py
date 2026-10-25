@@ -69,6 +69,13 @@ EXTRA_IMAGES = [
     ("铜球", "images/monsters/theCity/automaton/orb.png"),
 ]
 
+# Spine bakes appended after the single-image ones so those sprite indexes do
+# not move when a new skeleton joins the page.  LouseNormal is the green louse;
+# LouseDefensive (baked above as 红虱虫) is the red one.
+SPINE_EXTRA = [
+    ("虱虫", "images/monsters/theBottom/louseGreen"),
+]
+
 
 def main() -> int:
     page = Image.new("RGBA", (1024, 512), (0, 0, 0, 0))  # power-of-two: 3DS textures need it
@@ -110,6 +117,16 @@ def main() -> int:
                                       (index // 8) * CELL + (CELL - im.height) // 2))
             print(f"{key:8s} image {path} {im.width}x{im.height}")
             index += 1
+
+    for key, folder in SPINE_EXTRA:
+        im = bake(folder, pages)
+        if im is None:
+            print(f"{key}: spine bake failed ({folder})")
+            continue
+        page.alpha_composite(im, ((index % 8) * CELL + (CELL - im.width) // 2,
+                                  (index // 8) * CELL + (CELL - im.height) // 2))
+        print(f"{key:8s} spine {folder} {im.width}x{im.height}")
+        index += 1
 
     out = os.path.join(HERE, "assets", "monsters.png")
     page.save(out)

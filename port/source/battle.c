@@ -718,6 +718,14 @@ static void choose_gremlin_leader(Enemy *e, unsigned int roll) {
 }
 
 static void choose_move_roll(Enemy *e, unsigned int roll) {
+    if (e->moves == e->own) {
+        /* LouseNormal.getMove / LouseDefensive.getMove (A17 and below): move 0
+         * is the bite, move 1 the buff (normal) or the Weak (defensive).  A
+         * 25% roll prefers move 1, and neither move may run three times. */
+        if (roll < 25) e->move_index = last_two(e, 1) ? 0 : 1;
+        else e->move_index = last_two(e, 0) ? 1 : 0;
+        return;
+    }
     if (e->moves == CULTIST_MOVES) {
         /* Cultist.getMove: the first roll is Incantation, every later one is
          * Dark Strike. */
@@ -1397,6 +1405,34 @@ static void setup_act1_cultist(void) {
     choose_move(e);             /* the first roll is Incantation */
 }
 
+/* LouseNormal / LouseDefensive (LouseNormal.java:55-92, LouseDefensive.java):
+ * HP 10-15 and 11-17, a bite rolled once at spawn (5-7), and Curl Up worth
+ * 3-7 block.  The defensive louse weakens the player where the normal one
+ * strengthens itself. */
+static void setup_act1_louse(int slot, int defensive) {
+    add_enemy(slot, defensive ? "红虱虫" : "虱虫",
+              defensive ? 11 + (int)(battle_rand() % 7)
+                        : 10 + (int)(battle_rand() % 6));
+    Enemy *e = &g_battle.enemies[slot];
+    e->own[0].kind = MOVE_ATTACK;
+    e->own[0].value = (signed char)(5 + (int)(battle_rand() % 3));
+    e->own[1].kind = defensive ? MOVE_WEAK : MOVE_BUFF;
+    e->own[1].value = defensive ? 2 : 3;
+    e->moves = e->own;
+    e->move_count = 2;
+    e->last_move = 255;
+    e->last_before = 255;
+    e->curl_up = (unsigned char)(3 + (int)(battle_rand() % 5));
+}
+
+/* MonsterHelper's "2 Louse" / "3 Louse": every louse rolls normal or
+ * defensive on its own, the way getLouse() does it. */
+static void setup_act1_louses(int count) {
+    g_battle.enemy_count = (unsigned char)count;
+    for (int i = 0; i < count; i++) setup_act1_louse(i, (int)(battle_rand() & 1));
+    for (int i = 0; i < count; i++) choose_move(&g_battle.enemies[i]);
+}
+
 static void setup_encounter(int kind) {
     int depth = g_map.row < 0 ? 0 : g_map.row;
     g_battle.enemy_count = 0;
@@ -1692,8 +1728,17 @@ static int damage_enemy_typed(int index, int amount, int thorns) {
     int absorbed = e->block < amount ? e->block : amount;
     e->block -= absorbed;
     int lost = amount - absorbed;
+    /* CurlUpPower.onAttacked: the first hit that gets through grants its block
+     * after the damage lands, and a hit that would kill does not fire it. */
+    int curl = 0;
+    if (!thorns && e->curl_up > 0 && !e->curl_done && lost > 0 && lost < e->hp) {
+        curl = e->curl_up;
+        e->curl_done = 1;
+        e->curl_up = 0;
+    }
     e->hp -= lost;
     if (e->hp < 0) e->hp = 0;
+    if (curl > 0) e->block += curl;
     if (lost > 0) audio_sfx(AUDIO_SFX_HIT);
     if (e->hp <= 0) on_enemy_death(index);
     if (lost > 0 && e->hp > 0) {
@@ -3554,6 +3599,17 @@ void battle_test_spawn_act1(int which) {
     } else if (which == 4) {
         g_map.row = 4;
         setup_encounter(NODE_MONSTER);
+    } else if (which == 5) {
+        g_map.row = 3;
+        setup_act1_louses(2);
+    } else if (which == 6) {
+        g_map.row = 3;
+        setup_act1_louses(3);
+    } else if (which == 7 || which == 8) {
+        g_map.row = 3;
+        g_battle.enemy_count = 1;
+        setup_act1_louse(0, which == 8);
+        choose_move(&g_battle.enemies[0]);
     } else {
         g_map.row = 3;
         setup_encounter(NODE_MONSTER);
