@@ -3666,19 +3666,24 @@ static void handle_buttons(u32 kDown) {
         }
         if (kDown & (KEY_LEFT | KEY_L)) {
             if (s_target_mode) {
-                if (s_target > 0) s_target--;
+                if (s_target > 0) { s_target--; audio_sfx(AUDIO_SFX_CARD_SELECT); }
             } else if (s_focus > 0) {
                 s_focus--;
+                audio_sfx(AUDIO_SFX_CARD_SELECT);
             }
         }
         if (kDown & (KEY_RIGHT | KEY_R)) {
             if (s_target_mode) {
-                if (s_target + 1 < g_battle.enemy_count) s_target++;
+                if (s_target + 1 < g_battle.enemy_count) { s_target++; audio_sfx(AUDIO_SFX_CARD_SELECT); }
             } else if (s_focus + 1 < g_battle.hand_count) {
                 s_focus++;
+                audio_sfx(AUDIO_SFX_CARD_SELECT);
             }
         }
-        if (kDown & KEY_B) s_target_mode = 0;
+        if (kDown & KEY_B) {
+            if (s_target_mode) audio_sfx(AUDIO_SFX_CARD_REJECT);
+            s_target_mode = 0;
+        }
         if (kDown & KEY_A) {
             if (g_battle.phase != PHASE_PLAYER || s_focus >= g_battle.hand_count) return;
             if (s_target_mode) {
@@ -3775,18 +3780,21 @@ static void handle_buttons(u32 kDown) {
         }
         if (s_new_game_arm > 0 && --s_new_game_arm == 0) g_map.message[0] = 0;
         /* Up/down pan the tall map; left/right pick the next room. */
-        if (kDown & KEY_UP) s_map_view = map_clamp_view(s_map_view - MAP_PAN_STEP);
-        if (kDown & KEY_DOWN) s_map_view = map_clamp_view(s_map_view + MAP_PAN_STEP);
+        if (kDown & KEY_UP) { s_map_view = map_clamp_view(s_map_view - MAP_PAN_STEP); audio_sfx(AUDIO_SFX_UI_CLICK); }
+        if (kDown & KEY_DOWN) { s_map_view = map_clamp_view(s_map_view + MAP_PAN_STEP); audio_sfx(AUDIO_SFX_UI_CLICK); }
         int cand[4];
         int count = map_candidates(cand, 4);
         if (count > 0) {
             if (kDown & (KEY_LEFT | KEY_L)) {
                 s_map_sel = (s_map_sel + count - 1) % count;
+                audio_sfx(AUDIO_SFX_UI_CLICK);
             }
             if (kDown & (KEY_RIGHT | KEY_R)) {
                 s_map_sel = (s_map_sel + 1) % count;
+                audio_sfx(AUDIO_SFX_UI_CLICK);
             }
             if (kDown & KEY_A) {
+                audio_sfx(AUDIO_SFX_UI_CLICK);
                 map_enter(g_map.row + 1, cand[s_map_sel % count]);
                 s_map_sel = 0;
             }

@@ -618,6 +618,7 @@ int battle_use_potion(int slot, int target) {
     switch (id) {
     case POTION_HEAL: {
         int amount = g_battle.max_hp * 20 / 100;
+        audio_sfx(AUDIO_SFX_HEAL);
         g_battle.hp += amount;
         if (g_battle.hp > g_battle.max_hp) g_battle.hp = g_battle.max_hp;
         break;
@@ -2139,6 +2140,7 @@ static void on_card_drawn(int entry) {
  * (FeelNoPainPower.onExhaust, DarkEmbracePower.onExhaust). */
 static void exhaust_card(int entry) {
     if (g_battle.exhaust_count < 64) g_battle.exhaust[g_battle.exhaust_count++] = entry;
+    audio_sfx(AUDIO_SFX_EXHAUST);
     if (pw(POW_FEEL_NO_PAIN)) gain_block(pw(POW_FEEL_NO_PAIN));
     if (pw(POW_DARK_EMBRACE)) draw_cards(pw(POW_DARK_EMBRACE));
     {
@@ -2183,6 +2185,7 @@ static void win_battle(void) {
     }
     if (g_run.kind == NODE_BOSS) {
         g_map.gold += 95 + (int)(battle_rand() % 11);
+    audio_sfx(AUDIO_SFX_GOLD);
         for (int attempt = 0; attempt < 10; attempt++) {
             int id = (int)(battle_rand() % (unsigned int)RELIC_COUNT);
             if (battle_add_relic(id)) {
@@ -2202,6 +2205,7 @@ static void win_battle(void) {
         }
         if (battle_has_relic(RELIC_GOLDEN_IDOL)) g_run.gold_gain = g_run.gold_gain * 125 / 100;
         g_map.gold += g_run.gold_gain;
+        audio_sfx(AUDIO_SFX_GOLD);
         roll_rewards();
         g_run.screen = SCREEN_REWARD;
     }
@@ -3328,6 +3332,13 @@ static void enemy_take_turn(int i) {
     if (e->moves) {
         const EnemyMove *move = &e->moves[e->move_index];
         int custom_roll = 0;
+        /* Every enemy attack gets its swing before the hit lands.  The intent
+         * damage already folds in Strength, Weak and Vulnerable, so a heavy
+         * blow sounds heavy. */
+        int swing = battle_enemy_intent_damage(i);
+        if (swing > 0) {
+            audio_sfx(swing >= 15 ? AUDIO_SFX_ATTACK_HEAVY : AUDIO_SFX_ATTACK_FAST);
+        }
         switch (move->kind) {
         case MOVE_MULTI: {
             int hits = e->moves == STAB_MOVES ? e->stab_count : move->value2;
@@ -3845,6 +3856,7 @@ void battle_campfire(int choice) {
         return;
     }
     int heal = g_battle.max_hp * 30 / 100;
+    audio_sfx(AUDIO_SFX_HEAL);
     g_battle.hp += heal;
     if (g_battle.hp > g_battle.max_hp) g_battle.hp = g_battle.max_hp;
     snprintf(g_run.upgrade_name, sizeof(g_run.upgrade_name), "回复 %d 生命", heal);

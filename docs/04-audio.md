@@ -75,9 +75,12 @@ NDSP 初始化成功后，`audio.c` 把 `audio/sfx/*.pcm`（优先 romfs，其�
 播放点：
 
 - `battle_play`：攻击牌按伤害选 `attack_fast`/`attack_heavy`，能力牌 `buff`；`main.c` 的 `play_card` 成功后 `card_play`、失败 `card_reject`。
+- `enemy_take_turn`：敌人出手前按意图伤害选 `attack_fast`/`attack_heavy`，所以敌我双方都有挥击声，之后才接 `hit`。
 - `damage_enemy_typed` / `damage_player_raw`：实际掉血时 `hit`。
 - `gain_block`：获得格挡时 `block`。
 - `debuff_enemy`：负面状态真的挂上时 `debuff`。
+- `exhaust_card`：牌进入消耗堆时 `exhaust`；回血药水与营火休息 `heal`；战斗金币奖励与金币加成 `gold`。
+- 战斗中的手牌/目标光标移动 `card_select`，B 取消目标 `card_reject`；地图上移动光标与进入房间 `ui_click`。
 - `battle_start` / `battle_end_turn` / `win_battle` / 玩家死亡：`battle_start` / `end_turn` / `victory` / `defeat`。
 
 自动测试会打几百张牌，所以 `card_test_run()` 期间用 `audio_sfx_mute(1)` 静音，跑完再打开，避免测试构建一启动就连续响。
@@ -97,12 +100,12 @@ Azahar 的 DSP 是 HLE，不需要真正的 DSP 固件；但 libctru 的 `ndspIn
 
 `r` 是已经补过的 NDSP 缓冲块数；它随时间增长，说明 DSP 确实在消费流。第二条依次是已加载音效数、当前占用通道数、最近播放的 clip、累计播放次数。缺文件时分别显示 `音乐 act1.pcm 缺失`、`音效 0/17`。
 
-截图 `.tmp/shots/1400_sfx_report.png`（17/17、已发 0）和 `1404_sfx_report_played.png`（打出打击后已发 3，最近 `card_play`）是 SD 路径的证据；打包后的构建用 `.tmp/shots/1600_audio_pack_report.png` 验收：`音乐 act1 3:21 PLAYING NDSP r=32`、`音效 17/17`，且 `log.txt` 写有 `audio act1: romfs` / `audio sfx: romfs`。Azahar 的 NDSP HLE 不暴露实际发声，能验收的是加载、通道与缓冲推进。
+截图 `.tmp/shots/1400_sfx_report.png`（17/17、已发 0）和 `1404_sfx_report_played.png`（打出打击后已发 3，最近 `card_play`）是 SD 路径的证据；`.tmp/shots/sfx_hit.png` 是在第 2 幕奴隶贩子战斗里按 Y 之后截的报告屏（`最近 hit 已发 4`），说明敌人挥击声与命中声都走了通道；打包后的构建用 `.tmp/shots/1600_audio_pack_report.png` 验收：`音乐 act1 3:21 PLAYING NDSP r=32`、`音效 17/17`，且 `log.txt` 写有 `audio act1: romfs` / `audio sfx: romfs`。Azahar 的 NDSP HLE 不暴露实际发声，能验收的是加载、通道与缓冲推进。
 
 ## 已知缺口
 
 - 没有音量/静音设置、没有淡入淡出；音效只在 NDSP 路径可用。
-- 17 个片段中已接 12 个；`ui_click`、`card_select`、`exhaust`、`heal`、`gold` 还没有调用点。
+- 17 个片段都有调用点了，但 `ui_click` 目前只覆盖地图；商店、营火和标题屏的点击仍是静音。
 - 没有 Boss 曲、菜单曲和角色语音，只有三幕普通 BGM。
 - CSND 后备一次性占用整首曲目的线性内存，且不支持音效。
 - 三幕 BGM 全打包后 3dsx 约 32 MB；Old 3DS 的内存/加载器可能吃不消，目标机型仍是 New 3DS。若只是快速迭代，可先不放 `assets/audio/`，改用 SD 副本。
