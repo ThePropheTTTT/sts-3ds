@@ -2481,9 +2481,31 @@ static void draw_bottom_fight(void) {
     snprintf(buf, sizeof(buf), "弃 %d", g_battle.discard_count);
     text_draw(FS_SMALL, buf, 62, 26, COL_DIM);
 
+    /* The status button wears the game's own Weak icon; the stack count rides on
+     * its corner and pressing it still opens the status list. */
     rect_fill(150, 8, 64, 34, s_detail ? RGB(90, 74, 40) : RGB(46, 40, 32), 0.3f);
     rect_frame(150, 8, 64, 34, 1.5f, s_detail ? COL_LIT : RGB(120, 104, 78), 0.31f);
-    text_draw(FS_SMALL, "状态", 162, 16, COL_INK);
+    if (s_combat_tex) {
+        C2D_Image icon = {s_combat_tex, &s_cb_power[STS_POWER_WEAK]};
+        C2D_ImageTint tint;
+        C2D_PlainImageTint(&tint, g_battle.weak > 0 ? C2D_Color32f(1, 1, 1, 1)
+                                                    : C2D_Color32f(1, 1, 1, 0.55f), 1.0f);
+        C2D_DrawImageAt(icon, 169, 12, 0.33f, &tint, 26.0f / 48.0f, 26.0f / 48.0f);
+        if (g_battle.weak > 0) {
+            snprintf(buf, sizeof(buf), "%d", g_battle.weak);
+            float tw = text_width(FS_SMALL, buf);
+            float tx = 169 + 26.0f - tw;
+            float ty = 10.0f;
+            for (int oy = -1; oy <= 1; oy++) {
+                for (int ox = -1; ox <= 1; ox++) {
+                    if (!ox && !oy) continue;
+                    text_draw_depth(FS_SMALL, buf, tx + (float)ox, ty + (float)oy,
+                                    RGB(18, 16, 14), 0.334f);
+                }
+            }
+            text_draw_depth(FS_SMALL, buf, tx, ty, RGB(226, 150, 150), 0.335f);
+        }
+    }
 
     draw_end_turn_button();
 
