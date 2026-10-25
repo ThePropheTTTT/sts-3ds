@@ -21,6 +21,7 @@ tex3ds -f rgba4444 -o "$out/monsters.t3x" assets/monsters.png
 tex3ds -f rgba4444 -o "$out/combat.t3x" assets/combat.png
 tex3ds -f rgba4444 -o "$out/ui.t3x" assets/ui.png
 tex3ds -f rgba4444 -o "$out/map_paper.t3x" assets/map_paper.png
+tex3ds -f rgba4444 -o "$out/hud.t3x" assets/hud.png
 for act in act1 act2 act3; do
     tex3ds -f rgba4444 -o "$out/${act}.t3x" "assets/${act}.png"
 done

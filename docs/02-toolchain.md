@@ -151,4 +151,6 @@ Azahar 的 `GRenderWindow::mousePressEvent` 会直接忽略 `Qt::MouseEventSynth
 & 'E:/msys64/usr/bin/bash.exe' -lc 'CARD_TEST=1 UI_DEMO=1 bash /e/vibe_lab/sts-for-3ds/port/build.sh'
 ```
 
+截图驱动先发 `WM_SYSCOMMAND / SC_RESTORE`，再 `SetWindowPos` 到 760×1100；如果窗口还停在最大化/全屏，`SetWindowPos` 不会改尺寸，抓到的是 1280×720 里的一小块原生画面。
+
 这组按键走的是和硬件相同的 `handle_touch_fight()`/`touchPosition` 路径，能验证“牌跟随手指、目标框/文字随横移切换、放回手牌不扣能量”。

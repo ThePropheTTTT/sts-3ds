@@ -18,6 +18,7 @@
 #include "combat_gen.h"
 #include "ui_gen.h"
 #include "map_paper_gen.h"
+#include "hud_gen.h"
 #include "save.h"
 #include "audio.h"
 #include "diag.h"
@@ -122,6 +123,17 @@ static Tex3DS_SubTexture s_ui_paper;
 static C2D_SpriteSheet s_map_paper_sheet;
 static C3D_Tex *s_map_paper_tex;
 static Tex3DS_SubTexture s_map_paper_sub[3];
+static C2D_SpriteSheet s_hud_sheet;
+static C3D_Tex *s_hud_tex;
+static Tex3DS_SubTexture s_hud_energy[6];
+static Tex3DS_SubTexture s_hud_energy_dim[5];
+static Tex3DS_SubTexture s_hud_end[STS_HUD_END_COUNT];
+static Tex3DS_SubTexture s_hud_camp[STS_HUD_CAMP_COUNT];
+static Tex3DS_SubTexture s_hud_vfx;
+static float s_orb_angle[5];
+static float s_hud_dt = 1.0f / 60.0f;
+static u64 s_hud_tick;
+static float s_camp_scale[2] = {1.0f, 0.9f};
 static Tex3DS_SubTexture s_ev_panel;
 static Tex3DS_SubTexture s_ev_frame;
 static Tex3DS_SubTexture s_ev_ill[STS_EVENT_ILL_COUNT];
@@ -340,16 +352,18 @@ static int reward_hit(int px, int py) {
     return -1;
 }
 
+/* CampfireUI puts the two options side by side; the 256px art is drawn at
+ * 96px and the hitbox covers the visible card, not the transparent margin. */
 static void campfire_rect(int index, int *rx, int *ry) {
-    *rx = 16;
-    *ry = index == 0 ? 70 : 132;
+    *rx = (index == 0 ? 96 : 224) - 48;
+    *ry = 126 - 48;
 }
 
 static int campfire_hit(int px, int py) {
     for (int i = 0; i < 2; i++) {
         int rx, ry;
         campfire_rect(i, &rx, &ry);
-        if (px >= rx && px < rx + 288 && py >= ry && py < ry + 50) return i;
+        if (px >= rx && px < rx + 96 && py >= ry && py < ry + 96) return i;
     }
     return -1;
 }
@@ -398,6 +412,17 @@ static void set_sub_page(Tex3DS_SubTexture *dst, const StsCombatRect *r, float p
 
 static void set_sub_ui(Tex3DS_SubTexture *dst, const StsUiRect *r) {
     set_sub_rect(dst, r->x, r->y, r->w, r->h, (float)STS_UI_PAGE);
+}
+
+/* hud.t3x is a square 1024x1024 page; PICA200 textures need power-of-two
+ * dimensions, and the unused rows below the art are simply transparent. */
+static void set_sub_hud(Tex3DS_SubTexture *dst, const StsHudRect *r) {
+    dst->width = r->w;
+    dst->height = r->h;
+    dst->left = (float)r->x / (float)STS_HUD_PAGE_W;
+    dst->right = (float)(r->x + r->w) / (float)STS_HUD_PAGE_W;
+    dst->top = 1.0f - (float)r->y / (float)STS_HUD_PAGE_H;
+    dst->bottom = 1.0f - (float)(r->y + r->h) / (float)STS_HUD_PAGE_H;
 }
 
 /* map_paper.t3x is not square (512x1024), so x and y need their own page size. */
@@ -551,6 +576,17 @@ static void load_art(void) {
         set_sub_paper(&s_map_paper_sub[2], sts_map_paper_bot);
     }
 
+    s_hud_sheet = sheet_load("hud.t3x");
+    if (s_hud_sheet) {
+        C2D_Image img = C2D_SpriteSheetGetImage(s_hud_sheet, 0);
+        s_hud_tex = img.tex;
+        for (int i = 0; i < 6; i++) set_sub_hud(&s_hud_energy[i], &sts_hud_energy[i]);
+        for (int i = 0; i < 5; i++) set_sub_hud(&s_hud_energy_dim[i], &sts_hud_energy_dim[i]);
+        for (int i = 0; i < STS_HUD_END_COUNT; i++) set_sub_hud(&s_hud_end[i], &sts_hud_end[i]);
+        for (int i = 0; i < STS_HUD_CAMP_COUNT; i++) set_sub_hud(&s_hud_camp[i], &sts_hud_camp[i]);
+        set_sub_hud(&s_hud_vfx, &sts_hud_vfx);
+    }
+
     for (int i = 0; i < STS_CARD_COUNT; i++) {
         const struct CardDef *c = &sts_cards[i];
         s_art_subs[i].width = c->art_w;
@@ -560,6 +596,100 @@ static void load_art(void) {
         s_art_subs[i].top = 1.0f - c->art_y / 1024.0f;
         s_art_subs[i].bottom = 1.0f - (c->art_y + c->art_h) / 1024.0f;
     }
+}
+
+static C2D_Image hud_image(Tex3DS_SubTexture *sub) {
+    C2D_Image img = {s_hud_tex, sub};
+    return img;
+}
+
+/* EnergyOrbRed/EnergyPanel: five rotating layers, a fixed rim, and the same
+ * five layers in their dimmed empty-orb variant.  C2D has no text scaling, so
+ * the original font pop is left out; the swirl is the animation that matters. */
+static void update_hud_anim(void) {
+    u64 now = svcGetSystemTick();
+    float dt = s_hud_dt;
+    if (s_hud_tick) {
+        dt = (float)(now - s_hud_tick) / (float)SYSCLOCK_ARM11;
+        if (dt <= 0.0f || dt > 0.1f) dt = 1.0f / 60.0f;
+    }
+    s_hud_dt = dt;
+    s_hud_tick = now;
+
+    static const float lit_speed[5] = {360.0f, 40.0f, -40.0f, 20.0f, -20.0f};
+    static const float dim_speed[5] = {72.0f, 8.0f, -8.0f, 5.0f, -5.0f};
+    int empty = g_battle.energy <= 0;
+    for (int i = 0; i < 5; i++) {
+        s_orb_angle[i] += (empty ? dim_speed[i] : lit_speed[i]) * dt;
+        if (s_orb_angle[i] > 6.2831853f) s_orb_angle[i] -= 6.2831853f;
+        if (s_orb_angle[i] < -6.2831853f) s_orb_angle[i] += 6.2831853f;
+    }
+
+    /* AbstractCampfireOption: hover grows 0.9 -> 1.0 and the other button
+     * shrinks back.  Ease instead of snapping so the keyboard cursor reads. */
+    float k = dt * 14.0f;
+    if (k > 1.0f) k = 1.0f;
+    for (int i = 0; i < 2; i++) {
+        float target = i == s_campfire_focus ? 1.0f : 0.9f;
+        s_camp_scale[i] += (target - s_camp_scale[i]) * k;
+    }
+}
+
+static void draw_energy_orb(void) {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%d/%d", g_battle.energy, g_battle.max_energy);
+
+    if (s_hud_tex) {
+        const float size = 54.0f;
+        const float scale = size / 128.0f;
+        int empty = g_battle.energy <= 0;
+        for (int i = 0; i < 5; i++) {
+            C2D_Image layer = hud_image(empty ? &s_hud_energy_dim[i] : &s_hud_energy[i]);
+            C2D_DrawImageAtRotated(layer, 28.0f, 30.0f, 0.30f + (float)i * 0.001f,
+                                   s_orb_angle[i], NULL, scale, scale);
+        }
+        C2D_Image rim = hud_image(&s_hud_energy[5]);
+        C2D_DrawImageAtRotated(rim, 28.0f, 30.0f, 0.306f, 0.0f, NULL, scale, scale);
+    } else {
+        C2D_DrawCircleSolid(28, 30, 0.3f, 23.0f, RGB(26, 22, 18));
+        C2D_DrawCircleSolid(28, 30, 0.31f, 21.0f, RGB(60, 50, 26));
+    }
+    float tw = text_width(FS_MID, buf);
+    float tx = 28.0f - tw * 0.5f;
+    float ty = 21.0f;
+    /* BitmapFont's border: a one-pixel dark rim keeps the white digits
+     * readable where they cross the bright core. */
+    text_draw_depth(FS_MID, buf, tx - 1.0f, ty, RGB(28, 14, 6), 0.319f);
+    text_draw_depth(FS_MID, buf, tx + 1.0f, ty, RGB(28, 14, 6), 0.319f);
+    text_draw_depth(FS_MID, buf, tx, ty - 1.0f, RGB(28, 14, 6), 0.319f);
+    text_draw_depth(FS_MID, buf, tx, ty + 1.0f, RGB(28, 14, 6), 0.319f);
+    text_draw_depth(FS_MID, buf, tx, ty, RGB(255, 255, 219), 0.32f);
+}
+
+/* EndTurnButton: the 256px hexagon is scaled over the old 88x36 hitbox.  The
+ * hover plate is only press feedback for now (the 3DS has no pointer hover);
+ * a press drops both by two pixels, matching tmpY. */
+static void draw_end_turn_button(void) {
+    char buf[32];
+    int player_turn = g_battle.phase == PHASE_PLAYER;
+    snprintf(buf, sizeof(buf), "%s", player_turn ? "结束回合" : "敌方回合");
+    float cx = 270.0f, cy = 26.0f;
+    float yoff = s_press_end ? 2.0f : 0.0f;
+    if (s_hud_tex) {
+        const float scale = 88.0f / 256.0f;
+        if (s_press_end) {
+            C2D_Image hover = hud_image(&s_hud_end[STS_HUD_END_HOVER]);
+            C2D_DrawImageAt(hover, cx - 44.0f, cy + yoff - 44.0f, 0.30f, NULL, scale, scale);
+        }
+        C2D_Image base = hud_image(&s_hud_end[STS_HUD_END_TURN]);
+        C2D_DrawImageAt(base, cx - 44.0f, cy + yoff - 44.0f, 0.31f, NULL, scale, scale);
+    } else {
+        rect_fill(226, 8 + yoff, 88, 36, s_press_end ? RGB(120, 62, 52) : RGB(74, 40, 36), 0.3f);
+        rect_frame(226, 8 + yoff, 88, 36, 2.0f, s_press_end ? COL_LIT : RGB(170, 96, 84), 0.31f);
+    }
+    float tw = text_width(FS_SMALL, buf);
+    text_draw_depth(FS_SMALL, buf, cx - tw * 0.5f, 19.0f + yoff,
+                    player_turn ? COL_INK : COL_DIM, 0.32f);
 }
 
 static const char *type_label(int type) {
@@ -2319,11 +2449,8 @@ static void draw_fight_top(void) {
 }
 
 static void draw_bottom_fight(void) {
-    C2D_DrawCircleSolid(28, 30, 0.3f, 23.0f, RGB(26, 22, 18));
-    C2D_DrawCircleSolid(28, 30, 0.31f, 21.0f, RGB(60, 50, 26));
+    draw_energy_orb();
     char buf[32];
-    snprintf(buf, sizeof(buf), "%d/%d", g_battle.energy, g_battle.max_energy);
-    text_draw(FS_BIG, buf, 12, 18, RGB(246, 222, 142));
 
     snprintf(buf, sizeof(buf), "抽 %d", g_battle.draw_count);
     text_draw(FS_SMALL, buf, 62, 8, COL_DIM);
@@ -2334,9 +2461,7 @@ static void draw_bottom_fight(void) {
     rect_frame(150, 8, 64, 34, 1.5f, s_detail ? COL_LIT : RGB(120, 104, 78), 0.31f);
     text_draw(FS_SMALL, "状态", 162, 16, COL_INK);
 
-    rect_fill(226, 8, 88, 36, s_press_end ? RGB(120, 62, 52) : RGB(74, 40, 36), 0.3f);
-    rect_frame(226, 8, 88, 36, 2.0f, s_press_end ? COL_LIT : RGB(170, 96, 84), 0.31f);
-    text_draw(FS_SMALL, "结束回合", 232, 16, COL_INK);
+    draw_end_turn_button();
 
     int shown = s_drag.active ? s_drag.card : s_focus;
     if (shown >= 0 && shown < g_battle.hand_count) {
@@ -2480,10 +2605,10 @@ static void draw_campfire_top(void) {
     char buf[64];
     draw_background();
     rect_fill(0, 0, TOP_W, TOP_H, RGBA(8, 8, 10, 130), 0.2f);
-    text_draw(FS_BIG, "篝火", 168, 62, RGB(246, 176, 120));
+    text_draw(FS_BIG, "篝火", 168, 50, RGB(246, 176, 120));
     snprintf(buf, sizeof(buf), "生命 %d/%d", g_battle.hp, g_battle.max_hp);
-    text_draw(FS_MID, buf, 148, 110, COL_INK);
-    text_draw(FS_SMALL, "选择休息或锤炼，A 或点击确认", 92, 158, COL_DIM);
+    text_draw(FS_MID, buf, 148, 96, COL_INK);
+    text_draw(FS_SMALL, "选择休息或锻造，A 或点击确认", 92, 158, COL_DIM);
 }
 
 static void draw_campfire_screen(void) {
@@ -2495,18 +2620,45 @@ static void draw_campfire_screen(void) {
              g_battle.hp, g_battle.max_hp);
     text_draw(FS_SMALL, buf, 62, 3, COL_DIM);
 
-    const char *labels[2] = {"休息", "锤炼"};
-    const char *subs[2] = {"回复 30% 生命", battle_can_upgrade() ? "升级一张牌" : "牌组已全升级"};
+    static const char *labels[2] = {"休息", "锻造"};
     for (int i = 0; i < 2; i++) {
-        int rx, ry;
-        campfire_rect(i, &rx, &ry);
+        float cx = i == 0 ? 96.0f : 224.0f;
+        float cy = 126.0f;
+        float sz = 96.0f * s_camp_scale[i];
+        float hs = sz * 0.5f;
         int lit = i == s_campfire_focus;
-        rect_fill((float)rx, (float)ry, 288, 50, lit ? RGB(70, 52, 36) : RGB(40, 36, 32), 0.4f);
-        rect_frame((float)rx, (float)ry, 288, 50, lit ? 3.0f : 1.0f, lit ? COL_LIT : RGB(110, 100, 86), 0.45f);
-        text_draw(FS_MID, labels[i], (float)rx + 16, (float)ry + 6, COL_INK);
-        text_draw(FS_SMALL, subs[i], (float)rx + 96, (float)ry + 12, COL_DIM);
+
+        if (s_hud_tex) {
+            /* AbstractCampfireOption: shadow -> gold outline -> art.  The outline
+             * is a filled rounded rect; drawing it first leaves only the rim. */
+            C2D_Image shadow = hud_image(&s_hud_camp[STS_HUD_CAMP_SHADOW]);
+            C2D_DrawImageAt(shadow, cx - hs + 4.0f, cy - hs + 3.0f, 0.30f, NULL,
+                            sz / 256.0f, sz / 256.0f);
+            if (lit) {
+                float os = sz * 1.075f;
+                C2D_Image outline = hud_image(&s_hud_camp[STS_HUD_CAMP_OUTLINE]);
+                C2D_DrawImageAt(outline, cx - os * 0.5f, cy - os * 0.5f, 0.31f, NULL,
+                                os / 256.0f, os / 256.0f);
+            }
+            C2D_Image art = hud_image(&s_hud_camp[i == 0 ? STS_HUD_CAMP_SLEEP
+                                                       : STS_HUD_CAMP_SMITH]);
+            C2D_DrawImageAt(art, cx - hs, cy - hs, 0.32f, NULL, sz / 256.0f, sz / 256.0f);
+        } else {
+            rect_fill(cx - hs, cy - hs, sz, sz, lit ? RGB(70, 52, 36) : RGB(40, 36, 32), 0.4f);
+            rect_frame(cx - hs, cy - hs, sz, sz, lit ? 3.0f : 1.0f,
+                       lit ? COL_LIT : RGB(110, 100, 86), 0.45f);
+        }
+
+        float lw = text_width(FS_MID, labels[i]);
+        text_draw(FS_MID, labels[i], cx - lw * 0.5f, 164.0f, lit ? COL_GOLD : COL_INK);
     }
-    text_draw(FS_SMALL, "↑↓ 选择  A 确认", 104, 212, COL_DIM);
+
+    const char *desc = s_campfire_focus == 0
+        ? "回复你最大生命的30%。"
+        : (battle_can_upgrade() ? "升级你牌组中的一张牌。" : "没有可以升级的牌。");
+    float dw = text_width(FS_SMALL, desc);
+    text_draw(FS_SMALL, desc, (BOT_W - dw) * 0.5f, 190.0f, COL_DIM);
+    text_draw(FS_SMALL, "←→ 选择  A 确认", 104, 220, COL_DIM);
 }
 
 static void draw_upgrade_top(void) {
@@ -2515,7 +2667,7 @@ static void draw_upgrade_top(void) {
     char buf[96];
     draw_background();
     rect_fill(0, 0, TOP_W, TOP_H, RGBA(8, 8, 10, 170), 0.2f);
-    text_draw(FS_MID, "锤炼 · 升级一张牌", 10, 4, COL_GOLD);
+    text_draw(FS_MID, "锻造 · 升级一张牌", 10, 4, COL_GOLD);
     snprintf(buf, sizeof(buf), "牌组 %d 张", count);
     text_draw(FS_SMALL, buf, 330, 7, COL_DIM);
 
@@ -2569,7 +2721,7 @@ static void draw_upgrade_screen(void) {
     int first = page * 10;
     rect_fill(0, 0, BOT_W, BOT_H, RGB(22, 20, 18), 0.0f);
     rect_fill(0, 0, BOT_W, 22, RGBA(12, 12, 14, 235), 0.3f);
-    text_draw(FS_SMALL, "锤炼", 8, 3, COL_GOLD);
+    text_draw(FS_SMALL, "锻造", 8, 3, COL_GOLD);
     snprintf(buf, sizeof(buf), "升级一张牌  %d/%d 页", page + 1, (count + 9) / 10);
     text_draw(FS_SMALL, buf, 62, 3, COL_DIM);
 
@@ -3867,6 +4019,7 @@ int main(int argc, char **argv) {
         }
         update_play_fx();
         update_floaters();
+        update_hud_anim();
         if (s_toast_ttl > 0) s_toast_ttl--;
         audio_set_act(g_run.act);
         audio_update();
@@ -3889,6 +4042,7 @@ int main(int argc, char **argv) {
         if (s_art_sheets[i]) C2D_SpriteSheetFree(s_art_sheets[i]);
     }
     if (s_relic_sheet) C2D_SpriteSheetFree(s_relic_sheet);
+    if (s_hud_sheet) C2D_SpriteSheetFree(s_hud_sheet);
     C2D_Fini();
     C3D_Fini();
     gfxExit();
@@ -3939,6 +4093,7 @@ int main(int argc, char **argv) {
         handle_buttons(kDown);
         update_floaters();
         update_play_fx();
+        update_hud_anim();
         audio_set_act(g_run.act);
         audio_update();
 
@@ -3954,6 +4109,7 @@ int main(int argc, char **argv) {
         if (s_art_sheets[i]) C2D_SpriteSheetFree(s_art_sheets[i]);
     }
     if (s_relic_sheet) C2D_SpriteSheetFree(s_relic_sheet);
+    if (s_hud_sheet) C2D_SpriteSheetFree(s_hud_sheet);
     C2D_Fini();
     C3D_Fini();
     gfxExit();

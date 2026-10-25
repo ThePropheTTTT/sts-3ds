@@ -12,7 +12,7 @@ TARGET=sts3ds
 
 # Generated data tables are intentionally not committed.  Fail early with a
 # useful message instead of letting gcc report a missing include.
-for h in cards_gen.h l10n_gen.h visuals_gen.h combat_gen.h ui_gen.h map_paper_gen.h; do
+for h in cards_gen.h l10n_gen.h visuals_gen.h combat_gen.h ui_gen.h map_paper_gen.h hud_gen.h; do
     if [ ! -f "source/$h" ]; then
         echo "missing source/$h" >&2
         echo "run the extraction steps in docs/01-data-pipeline.md first" >&2
@@ -51,7 +51,8 @@ cp "$ROOT"/assets/t3x/cards_*.t3x "$ROOT"/assets/t3x/relic_icons.t3x \
    "$ROOT"/assets/t3x/visuals.t3x "$ROOT"/assets/t3x/act1.t3x \
    "$ROOT"/assets/t3x/act2.t3x "$ROOT"/assets/t3x/act3.t3x \
    "$ROOT"/assets/t3x/monsters.t3x "$ROOT"/assets/t3x/combat.t3x \
-   "$ROOT"/assets/t3x/ui.t3x "$ROOT"/assets/t3x/map_paper.t3x build/romfs/
+   "$ROOT"/assets/t3x/ui.t3x "$ROOT"/assets/t3x/map_paper.t3x \
+   "$ROOT"/assets/t3x/hud.t3x build/romfs/
 
 # The extracted PCM is optional at build time: when it is present it goes into
 # the 3dsx romfs, so a stock 3dsx carries its own music and effects.  The SD
