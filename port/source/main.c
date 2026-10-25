@@ -2468,12 +2468,23 @@ static void draw_bottom_fight(void) {
         int card_index = battle_hand_card(shown);
         const struct CardDef *c = &sts_cards[card_index];
         int up = battle_hand_up(shown);
+        int level = battle_hand_level(shown);
         rect_fill(6, 56, 308, 84, COL_PANEL, 0.32f);
         rect_frame(6, 56, 308, 84, 1.0f, RGB(86, 78, 66), 0.33f);
         char name[40];
-        snprintf(name, sizeof(name), "%s%s", c->name, up ? "+" : "");
+        if (strcmp(c->id, "Searing Blow") == 0 && level > 0)
+            snprintf(name, sizeof(name), "%s+%d", c->name, level);
+        else
+            snprintf(name, sizeof(name), "%s%s", c->name, up ? "+" : "");
         text_draw(FS_MID, name, 12, 58, COL_INK);
-        text_draw_wrapped(FS_SMALL, up ? c->text_up : c->text, 12, 82, 296, 3, RGB(228, 218, 198));
+        char searing[96];
+        const char *body = up ? c->text_up : c->text;
+        if (strcmp(c->id, "Searing Blow") == 0 && level > 0) {
+            snprintf(searing, sizeof(searing), "造成 %d 点伤害。\n能被多次升级。",
+                     battle_searing_damage(level));
+            body = searing;
+        }
+        text_draw_wrapped(FS_SMALL, body, 12, 82, 296, 3, RGB(228, 218, 198));
         if (s_drag.activated && s_target >= 0 && s_target < g_battle.enemy_count) {
             Enemy *e = &g_battle.enemies[s_target];
             snprintf(buf, sizeof(buf), "目标：%s %d/%d", e->name, e->hp, e->max_hp);
@@ -2674,11 +2685,13 @@ static void draw_upgrade_top(void) {
     if (sel < 0 || sel >= count) return;
     int card = battle_deck_card(sel);
     int up = battle_deck_up(sel);
+    int level = battle_deck_level(sel);
     const struct CardDef *c = &sts_cards[card];
 
+    int can_more = strcmp(c->id, "Searing Blow") == 0 || !up;
     text_draw(FS_SMALL, up ? "当前（已升级）" : "当前", 48, 30, COL_DIM);
     draw_card(card, up, 36, 50, 110, 154, 1);
-    if (!up && c->type <= 2) {
+    if (can_more && c->type <= 2) {
         text_draw(FS_SMALL, "升级后", 268, 30, COL_GOLD);
         draw_card(card, 1, 254, 50, 110, 154, 1);
         text_draw(FS_MID, "→", 190, 108, COL_LIT);
@@ -2690,26 +2703,30 @@ static void draw_upgrade_top(void) {
     int cost_after = battle_cost_of(c, 1);
     int dmg_before = c->damage + (up ? c->up_damage : 0);
     int dmg_after = c->damage + c->up_damage;
+    if (strcmp(c->id, "Searing Blow") == 0) {
+        dmg_before = battle_searing_damage(level);
+        dmg_after = battle_searing_damage(level + 1);
+    }
     int blk_before = c->block + (up ? c->up_block : 0);
     int blk_after = c->block + c->up_block;
     int magic_before = c->magic + (up ? c->up_magic : 0);
     int magic_after = c->magic + c->up_magic;
 
-    snprintf(buf, sizeof(buf), "费 %d → %d", cost_before, up ? cost_before : cost_after);
+    snprintf(buf, sizeof(buf), "费 %d → %d", cost_before, can_more ? cost_after : cost_before);
     text_draw(FS_SMALL, buf, 10, 212, COL_INK);
     int x = 96;
     if (c->damage) {
-        snprintf(buf, sizeof(buf), "伤害 %d → %d", dmg_before, up ? dmg_before : dmg_after);
+        snprintf(buf, sizeof(buf), "伤害 %d → %d", dmg_before, can_more ? dmg_after : dmg_before);
         text_draw(FS_SMALL, buf, (float)x, 212, COL_INK);
         x += 98;
     }
     if (c->block) {
-        snprintf(buf, sizeof(buf), "格挡 %d → %d", blk_before, up ? blk_before : blk_after);
+        snprintf(buf, sizeof(buf), "格挡 %d → %d", blk_before, can_more ? blk_after : blk_before);
         text_draw(FS_SMALL, buf, (float)x, 212, COL_INK);
         x += 98;
     }
     if (c->magic && !c->damage && !c->block) {
-        snprintf(buf, sizeof(buf), "数值 %d → %d", magic_before, up ? magic_before : magic_after);
+        snprintf(buf, sizeof(buf), "数值 %d → %d", magic_before, can_more ? magic_after : magic_before);
         text_draw(FS_SMALL, buf, (float)x, 212, COL_INK);
     }
 }
@@ -2787,7 +2804,9 @@ static const char *pick_title(int mode) {
     case PICK_DISCOVERY:    return "发现：选择一张牌加入手牌";
     case PICK_DRAW_SKILL:   return "从抽牌堆选择一张技能牌";
     case PICK_DRAW_ATTACK:  return "从抽牌堆选择一张攻击牌";
-    case PICK_BOTTOM_HAND:  return "选择一张牌放到抽牌堆底";
+    case PICK_BOTTOM_HAND:  return battle_pick_extra() < 0
+                                   ? "选择任意张牌放到抽牌堆底部"
+                                   : "选择一张牌放到抽牌堆底";
     case PICK_EXHAUST_MANY: {
         static char buf[48];
         snprintf(buf, sizeof(buf), "消耗最多 %d 张牌", battle_pick_extra());
@@ -2853,7 +2872,10 @@ static void draw_pick_bottom(void) {
     text_draw_wrapped(FS_SMALL, up ? c->text_up : c->text, 8, 70, 304, 7,
                       RGB(228, 218, 198));
     if (battle_pick_multi()) {
-        if (count > per) {
+        if (battle_pick_extra() < 0) {
+            snprintf(buf, sizeof(buf), "已选 %d  A 选择  Y 确认  B 取消",
+                     battle_pick_marked_count());
+        } else if (count > per) {
             snprintf(buf, sizeof(buf), "已选 %d/%d  L/R 翻页  A 选择  Y 确认  B 取消",
                      battle_pick_marked_count(), battle_pick_extra());
         } else {

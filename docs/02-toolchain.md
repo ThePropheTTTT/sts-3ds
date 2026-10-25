@@ -145,7 +145,7 @@ Azahar 的 `GRenderWindow::mousePressEvent` 会直接忽略 `Qt::MouseEventSynth
 - 报告屏按 `B` 循环全部战斗/选牌演示（Automaton → Collector → Gremlin Leader → 第 3 幕背景 → 第 1 幕 Boss 与普通怪 → 剩余 Power 卡 → Purity / Forethought 选牌），`SELECT` 从演示回到报告；
 - 战斗屏按 `X` 从第三张牌开始拖动并把目标切到 0 号敌人槽，按 `Y` 在该目标上松手出牌，按 `B` 把手牌放回扇形取消。
 
-需要给奖励、篝火、升级这三个屏截图时，用同一套构建加 `UI_DEMO`（0 升级、1 奖励、2 篝火、3 True Grit+ 选牌），启动后直接停在对应画面；标题屏用出货构建截：
+需要给奖励、篝火、升级这三个屏截图时，用同一套构建加 `UI_DEMO`（0 升级、1 奖励、2 篝火、3 True Grit+ 选牌、4 Searing Blow 升级屏、5 五张升级文本卡：Ghostly+/Forethought+/Searing+2/Discovery+/Burn+），启动后直接停在对应画面；标题屏用出货构建截：
 
 ```powershell
 & 'E:/msys64/usr/bin/bash.exe' -lc 'CARD_TEST=1 UI_DEMO=1 bash /e/vibe_lab/sts-for-3ds/port/build.sh'

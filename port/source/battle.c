@@ -21,6 +21,9 @@
 
 /* Defined further down; potions use it before its definition. */
 static void damage_enemy(int index, int amount);
+/* Card upgrade helpers live with Apotheosis, but the picker uses them too. */
+static int can_upgrade_entry(int entry);
+static int upgrade_entry(int entry);
 
 Battle g_battle;
 Run g_run;
@@ -124,6 +127,11 @@ int battle_hand_up(int slot) {
     return CARD_UPGRADED(g_battle.hand[slot]);
 }
 
+int battle_hand_level(int slot) {
+    if (slot < 0 || slot >= g_battle.hand_count) return 0;
+    return CARD_LEVEL(g_battle.hand[slot]);
+}
+
 const CardDef *battle_card(int slot) {
     int index = battle_hand_card(slot);
     return index < 0 ? NULL : &sts_cards[index];
@@ -143,14 +151,53 @@ static const char *EXHAUSTS[] = {
 };
 
 static int card_exhausts(const CardDef *c, int up) {
-    /* Secret Technique and Secret Weapon lose Exhaust when upgraded. */
-    if (strcmp(c->id, "Secret Technique") == 0 || strcmp(c->id, "Secret Weapon") == 0) {
+    /* Secret Technique, Secret Weapon, Discovery, Thinking Ahead and Limit
+     * Break lose the Exhaust keyword on upgrade.  The zhs card JSON only has
+     * the base description, so these are driven by the id here, not by the
+     * generated text. */
+    if (strcmp(c->id, "Secret Technique") == 0 ||
+        strcmp(c->id, "Secret Weapon") == 0 ||
+        strcmp(c->id, "Discovery") == 0 ||
+        strcmp(c->id, "Thinking Ahead") == 0 ||
+        strcmp(c->id, "Limit Break") == 0) {
         return up ? 0 : 1;
     }
     for (size_t i = 0; i < sizeof(EXHAUSTS) / sizeof(EXHAUSTS[0]); i++) {
         if (strcmp(c->id, EXHAUSTS[i]) == 0) return 1;
     }
     return 0;
+}
+
+/* Searing Blow's damage is not a flat +4: each upgrade adds 4 + timesUpgraded.
+ * Level 0 is 12, then 16, 21, 27, ... (SearingBlow.upgrade()). */
+int battle_searing_damage(int level) {
+    if (level < 0) level = 0;
+    return 12 + 4 * level + level * (level - 1) / 2;
+}
+
+/* AbstractCard.isInnate: Mind Blast and Dramatic Entrance are always innate;
+ * Brutality only becomes innate when upgraded.  Pride and Writhe are the two
+ * innate status/curse cards in this card set. */
+static int is_innate_entry(int entry) {
+    int index = CARD_INDEX(entry);
+    if (index < 0 || index >= STS_CARD_COUNT) return 0;
+    const char *id = sts_cards[index].id;
+    if (strcmp(id, "Mind Blast") == 0 || strcmp(id, "Dramatic Entrance") == 0 ||
+        strcmp(id, "Pride") == 0 || strcmp(id, "Writhe") == 0) return 1;
+    return strcmp(id, "Brutality") == 0 && CARD_UPGRADED(entry);
+}
+
+/* AbstractCard.isEthereal: exhausted at the end of the turn.  Apparition is
+ * the one card whose upgrade removes Ethereal; Ghostly Armor really is
+ * Ethereal, so it stays in this list. */
+static int is_ethereal_entry(int entry) {
+    int index = CARD_INDEX(entry);
+    if (index < 0 || index >= STS_CARD_COUNT) return 0;
+    const char *id = sts_cards[index].id;
+    if (strcmp(id, "Clumsy") == 0 || strcmp(id, "Carnage") == 0 ||
+        strcmp(id, "Ghostly Armor") == 0 || strcmp(id, "Dazed") == 0 ||
+        strcmp(id, "Void") == 0 || strcmp(id, "AscendersBane") == 0) return 1;
+    return strcmp(id, "Ghostly") == 0 && !CARD_UPGRADED(entry);
 }
 
 static int card_damage(const CardDef *c, int up) { return c->damage + (up ? c->up_damage : 0); }
@@ -1380,6 +1427,26 @@ static void setup_encounter(int kind) {
     }
 }
 
+/* CardGroup.initializeDeck: after the shuffle, innate cards are moved to the
+ * top of the draw pile (the end of `draw`, which draw_cards pops from). */
+static void apply_innate_cards(void) {
+    int innate[64];
+    int n = 0;
+    int kept = 0;
+    for (int i = 0; i < g_battle.draw_count; i++) {
+        int entry = g_battle.draw[i];
+        if (is_innate_entry(entry)) {
+            if (n < 64) innate[n++] = entry;
+        } else {
+            g_battle.draw[kept++] = entry;
+        }
+    }
+    g_battle.draw_count = kept;
+    for (int i = 0; i < n && g_battle.draw_count < 64; i++) {
+        g_battle.draw[g_battle.draw_count++] = innate[i];
+    }
+}
+
 void battle_start(int kind) {
     int hp = g_battle.hp;
     int max_hp = g_battle.max_hp;
@@ -1400,6 +1467,7 @@ void battle_start(int kind) {
 
     for (int i = 0; i < g_run.deck_count; i++) g_battle.draw[g_battle.draw_count++] = g_run.deck[i];
     shuffle(g_battle.draw, g_battle.draw_count);
+    apply_innate_cards();
     setup_encounter(kind);
     g_run.screen = SCREEN_FIGHT;
     start_player_turn();
@@ -1989,7 +2057,7 @@ static int open_pick(int mode, int extra) {
     if (mode == PICK_UPGRADE_HAND || mode == PICK_EXHAUST_HAND ||
         mode == PICK_EXHAUST_MANY || mode == PICK_TOP_HAND || mode == PICK_BOTTOM_HAND) {
         for (int i = 0; i < g_battle.hand_count; i++) {
-            if (mode == PICK_UPGRADE_HAND && CARD_UPGRADED(g_battle.hand[i])) continue;
+            if (mode == PICK_UPGRADE_HAND && !can_upgrade_entry(g_battle.hand[i])) continue;
             pick_push(i);
         }
     } else if (mode == PICK_COPY_HAND) {
@@ -2087,7 +2155,7 @@ int battle_pick_choose(int index) {
     int source = g_battle.pick_source[index];
     switch (g_battle.pick_mode) {
     case PICK_UPGRADE_HAND:
-        g_battle.hand[source] = CARD_ENTRY(CARD_INDEX(g_battle.hand[source]), 1);
+        g_battle.hand[source] = upgrade_entry(g_battle.hand[source]);
         break;
     case PICK_EXHAUST_HAND: {
         int entry = g_battle.hand[source];
@@ -2169,7 +2237,10 @@ void battle_pick_cancel(void) {
 }
 
 int battle_pick_extra(void) { return g_battle.pick_extra; }
-int battle_pick_multi(void) { return g_battle.pick_mode == PICK_EXHAUST_MANY; }
+int battle_pick_multi(void) {
+    return g_battle.pick_mode == PICK_EXHAUST_MANY ||
+           (g_battle.pick_mode == PICK_BOTTOM_HAND && g_battle.pick_extra < 0);
+}
 
 int battle_pick_marked(int index) {
     if (index < 0 || index >= g_battle.pick_count) return 0;
@@ -2186,20 +2257,23 @@ int battle_pick_marked_count(void) {
 
 /* Purity: A ticks cards instead of confirming, so the count is capped here. */
 void battle_pick_toggle(int index) {
-    if (g_battle.pick_mode != PICK_EXHAUST_MANY) return;
+    int unlimited = g_battle.pick_mode == PICK_BOTTOM_HAND && g_battle.pick_extra < 0;
+    if (g_battle.pick_mode != PICK_EXHAUST_MANY && !unlimited) return;
     if (index < 0 || index >= g_battle.pick_count) return;
     if (g_battle.pick_marked[index]) {
         g_battle.pick_marked[index] = 0;
         return;
     }
-    if (battle_pick_marked_count() >= g_battle.pick_extra) return;
+    if (!unlimited && battle_pick_marked_count() >= g_battle.pick_extra) return;
     g_battle.pick_marked[index] = 1;
 }
 
 /* Confirms a Purity selection.  Exhausting is done from the end of the hand
  * so the remaining slots keep their order. */
 int battle_pick_confirm_multi(void) {
-    if (g_run.screen != SCREEN_PICK || g_battle.pick_mode != PICK_EXHAUST_MANY) return 0;
+    int mode = g_battle.pick_mode;
+    int bottom = mode == PICK_BOTTOM_HAND && g_battle.pick_extra < 0;
+    if (g_run.screen != SCREEN_PICK || (mode != PICK_EXHAUST_MANY && !bottom)) return 0;
     int ticked[10];
     memset(ticked, 0, sizeof(ticked));
     for (int i = 0; i < g_battle.pick_count; i++) {
@@ -2208,9 +2282,33 @@ int battle_pick_confirm_multi(void) {
     }
     int kept[10];
     int kept_count = 0;
-    for (int i = 0; i < g_battle.hand_count; i++) {
-        if (ticked[i]) exhaust_card(g_battle.hand[i]);
-        else kept[kept_count++] = g_battle.hand[i];
+    if (bottom) {
+        int chosen[10];
+        int chosen_count = 0;
+        for (int i = 0; i < g_battle.hand_count; i++) {
+            if (ticked[i]) chosen[chosen_count++] = g_battle.hand[i];
+            else kept[kept_count++] = g_battle.hand[i];
+        }
+        /* ForethoughtAction moves each selected card with addToBottom(),
+         * which inserts at group index 0; the last selected therefore sits
+         * at the very bottom.  Our draw pile pops from the end, so the first
+         * selected card must end up at the highest index among the chosen
+         * block.  The cards are still below the existing draw pile. */
+        if (chosen_count > 0 && g_battle.draw_count + chosen_count <= 64) {
+            memmove(&g_battle.draw[chosen_count], &g_battle.draw[0],
+                    sizeof(int) * (size_t)g_battle.draw_count);
+            for (int i = 0; i < chosen_count; i++) {
+                int entry = chosen[chosen_count - 1 - i];
+                g_battle.draw[i] = entry;
+                g_battle.zero_once[CARD_INDEX(entry)] = 1;
+            }
+            g_battle.draw_count += chosen_count;
+        }
+    } else {
+        for (int i = 0; i < g_battle.hand_count; i++) {
+            if (ticked[i]) exhaust_card(g_battle.hand[i]);
+            else kept[kept_count++] = g_battle.hand[i];
+        }
     }
     memcpy(g_battle.hand, kept, sizeof(int) * (size_t)kept_count);
     g_battle.hand_count = kept_count;
@@ -2219,21 +2317,50 @@ int battle_pick_confirm_multi(void) {
     return 1;
 }
 
+/* Cards whose upgrade changes something other than damage/block/magic/cost
+ * and therefore has no numeric delta in upgrades.json.  Their text may also be
+ * unchanged in the zhs JSON, so without this list Apotheosis would skip them. */
+static int card_has_special_upgrade(const CardDef *d) {
+    static const char *const IDS[] = {
+        "Ghostly", "Blind", "Trip", "Discovery", "Enlightenment",
+        "Forethought", "Secret Technique", "Secret Weapon", "Thinking Ahead",
+        "Transmutation", "Armaments", "Brutality", "Limit Break", "Searing Blow",
+    };
+    for (size_t i = 0; i < sizeof(IDS) / sizeof(IDS[0]); i++) {
+        if (strcmp(d->id, IDS[i]) == 0) return 1;
+    }
+    return 0;
+}
+
 /* ApotheosisAction.canUpgrade: Statuses and Curses stay as they are, and a
- * card with no upgrade text has nothing to gain. */
+ * card with no upgrade text has nothing to gain.  cost_up matters too:
+ * Body Slam, Barricade and friends only change their cost. */
 static int card_can_upgrade(int index) {
     if (index < 0 || index >= STS_CARD_COUNT) return 0;
     const CardDef *d = &sts_cards[index];
     if (d->type > 2) return 0;
-    return d->up_damage || d->up_block || d->up_magic || strcmp(d->text, d->text_up) != 0;
+    if (strcmp(d->id, "Searing Blow") == 0) return 1;   /* canUpgrade is always true */
+    return d->up_damage || d->up_block || d->up_magic || d->cost_up != d->cost ||
+           strcmp(d->text, d->text_up) != 0 || card_has_special_upgrade(d);
+}
+
+static int can_upgrade_entry(int entry) {
+    if (!card_can_upgrade(CARD_INDEX(entry))) return 0;
+    if (strcmp(sts_cards[CARD_INDEX(entry)].id, "Searing Blow") == 0) return 1;
+    return !CARD_UPGRADED(entry);
+}
+
+static int upgrade_entry(int entry) {
+    int index = CARD_INDEX(entry);
+    if (strcmp(sts_cards[index].id, "Searing Blow") == 0) {
+        return CARD_ENTRY_LEVEL(index, CARD_LEVEL(entry) + 1);
+    }
+    return CARD_ENTRY(index, 1);
 }
 
 static void upgrade_pile(int *pile, int count) {
     for (int i = 0; i < count; i++) {
-        int index = CARD_INDEX(pile[i]);
-        if (!CARD_UPGRADED(pile[i]) && card_can_upgrade(index)) {
-            pile[i] = CARD_ENTRY(index, 1);
-        }
+        if (can_upgrade_entry(pile[i])) pile[i] = upgrade_entry(pile[i]);
     }
 }
 
@@ -2361,9 +2488,12 @@ int battle_play(int slot, int target) {
     int damage = card_damage(c, up);
     /* MindBlast.applyPowers(): damage is the draw pile size.  RitualDagger's
      * damage lives in misc (15), not the extracted damage column, so it is
-     * built from the run-wide growth value here. */
+     * built from the run-wide growth value here.  Searing Blow stores its
+     * upgrade count in the pile entry, not in a flat +4 delta. */
     if (strcmp(c->id, "Mind Blast") == 0) damage = g_battle.draw_count;
     if (strcmp(c->id, "RitualDagger") == 0) damage = 15 + g_run.ritual_bonus;
+    if (strcmp(c->id, "Searing Blow") == 0)
+        damage = battle_searing_damage(CARD_LEVEL(g_battle.hand[slot]));
     int strength_scale = 1;
     if (strcmp(c->id, "Heavy Blade") == 0) strength_scale = magic > 0 ? magic : 3;
     damage += g_battle.strength * strength_scale;
@@ -2376,7 +2506,12 @@ int battle_play(int slot, int target) {
         for (int i = 0; i < g_battle.hand_count; i++) {
             if (strstr(sts_cards[CARD_INDEX(g_battle.hand[i])].name, "打击")) strike_cards++;
         }
-        damage += strike_cards * 2;
+        for (int i = 0; i < g_battle.discard_count; i++) {
+            if (strstr(sts_cards[CARD_INDEX(g_battle.discard[i])].name, "打击")) strike_cards++;
+        }
+        /* PerfectedStrike.countCards(): hand + draw pile + discard pile; the
+         * card itself is still in hand here, just like calculateCardDamage. */
+        damage += strike_cards * magic;
     }
     if (strcmp(c->id, "Rampage") == 0) {
         damage += g_battle.rampage_bonus;
@@ -2725,11 +2860,13 @@ int battle_play(int slot, int target) {
     if (strcmp(c->id, "Purity") == 0) {
         open_pick(PICK_EXHAUST_MANY, magic);
     } else if (strcmp(c->id, "Forethought") == 0) {
-        open_pick(PICK_BOTTOM_HAND, 0);
+        /* ForethoughtAction: the upgraded version is chooseAny, 99 cards. */
+        open_pick(PICK_BOTTOM_HAND, up ? -1 : 0);
     } else if (strcmp(c->id, "Armaments") == 0) {
         if (up) {
             for (int i = 0; i < g_battle.hand_count; i++) {
-                g_battle.hand[i] = CARD_ENTRY(CARD_INDEX(g_battle.hand[i]), 1);
+                if (can_upgrade_entry(g_battle.hand[i]))
+                    g_battle.hand[i] = upgrade_entry(g_battle.hand[i]);
             }
         } else {
             open_pick(PICK_UPGRADE_HAND, 0);
@@ -2920,16 +3057,15 @@ static int end_turn_powers(void) {
         int regret = battle_find_card("Regret");
         int decay = battle_find_card("Decay");
         int doubt = battle_find_card("Doubt");
-        int clumsy = battle_find_card("Clumsy");
-        int carnage = battle_find_card("Carnage");
-        int ghostly = battle_find_card("Ghostly Armor");
         int burn = battle_find_card("Burn");
         int pride = battle_find_card("Pride");
         for (int i = 0; i < g_battle.hand_count; i++) {
             int card = CARD_INDEX(g_battle.hand[i]);
             if (card == burn) {
-                /* Burn: at the end of the turn, take its magic as damage. */
-                damage_player_raw(sts_cards[burn].magic);
+                /* Burn: at the end of the turn, take its magic as damage.  The
+                 * upgraded copy is entry level 1 and its magic is 4, not 2. */
+                damage_player_raw(card_magic(&sts_cards[burn],
+                                             CARD_UPGRADED(g_battle.hand[i])));
             } else if (card == pride) {
                 /* Pride: at the end of the turn, grow a copy in the draw pile. */
                 if (g_battle.draw_count < 64) {
@@ -2941,8 +3077,9 @@ static int end_turn_powers(void) {
                 lose_hp_from_card(2);
             } else if (card == doubt) {
                 g_battle.weak += 1;
-            } else if (card == clumsy || card == carnage || card == ghostly) {
-                /* Ethereal: exhausts at the end of the turn. */
+            } else if (is_ethereal_entry(g_battle.hand[i])) {
+                /* Ethereal: exhausts at the end of the turn.  Apparition+ is
+                 * the only card in this set whose upgrade turns this off. */
                 exhaust_card(g_battle.hand[i]);
                 g_battle.hand[i] = -1;
             }
@@ -3397,6 +3534,13 @@ void battle_test_enemy_turn(int index) {
     if (index < 0 || index >= g_battle.enemy_count) return;
     enemy_take_turn(index);
 }
+
+int battle_test_card_can_upgrade(int index) { return card_can_upgrade(index); }
+int battle_test_can_upgrade_entry(int entry) { return can_upgrade_entry(entry); }
+int battle_test_upgrade_entry(int entry) { return upgrade_entry(entry); }
+int battle_test_entry_innate(int entry) { return is_innate_entry(entry); }
+int battle_test_entry_ethereal(int entry) { return is_ethereal_entry(entry); }
+void battle_test_apply_innate(void) { apply_innate_cards(); }
 #endif
 
 void battle_choose_reward(int index) {
@@ -3422,13 +3566,13 @@ int battle_deck_up(int index) {
     return index < 0 || index >= g_run.deck_count ? 0 : CARD_UPGRADED(g_run.deck[index]);
 }
 
+int battle_deck_level(int index) {
+    return index < 0 || index >= g_run.deck_count ? 0 : CARD_LEVEL(g_run.deck[index]);
+}
+
 int battle_can_upgrade(void) {
     for (int i = 0; i < g_run.deck_count; i++) {
-        int card = CARD_INDEX(g_run.deck[i]);
-        if (card < 0 || card >= STS_CARD_COUNT) continue;
-        /* AbstractCard.canUpgrade(): curses and statuses have no upgrade. */
-        if (sts_cards[card].type > 2) continue;
-        if (!CARD_UPGRADED(g_run.deck[i])) return 1;
+        if (can_upgrade_entry(g_run.deck[i])) return 1;
     }
     return 0;
 }
@@ -3445,9 +3589,8 @@ void battle_cancel_upgrade(void) {
 int battle_confirm_upgrade(int deck_index) {
     if (g_run.screen != SCREEN_UPGRADE) return 0;
     if (deck_index < 0 || deck_index >= g_run.deck_count) return 0;
-    if (CARD_UPGRADED(g_run.deck[deck_index])) return 0;
-    if (sts_cards[CARD_INDEX(g_run.deck[deck_index])].type > 2) return 0;
-    g_run.deck[deck_index] = CARD_ENTRY(CARD_INDEX(g_run.deck[deck_index]), 1);
+    if (!can_upgrade_entry(g_run.deck[deck_index])) return 0;
+    g_run.deck[deck_index] = upgrade_entry(g_run.deck[deck_index]);
     snprintf(g_run.upgrade_name, sizeof(g_run.upgrade_name), "升级 %s",
              sts_cards[CARD_INDEX(g_run.deck[deck_index])].name);
     map_after_node();

@@ -19,10 +19,14 @@ enum { SCREEN_FIGHT = 0, SCREEN_REWARD, SCREEN_CAMPFIRE, SCREEN_UPGRADE, SCREEN_
        SCREEN_PICK,        /* a card wants the player to choose from a pile */
        SCREEN_TITLE };     /* title / continue-or-new-game */
 
-/* A pile entry packs (card index | upgraded flag). */
+/* A pile entry packs (card index | upgrade level << 8).  Most cards stop at
+ * level 1; Searing Blow can be upgraded repeatedly, so the whole byte is the
+ * level and CARD_UPGRADED is simply "level != 0". */
 #define CARD_ENTRY(card, up) ((card) | ((up) ? 0x100 : 0))
+#define CARD_ENTRY_LEVEL(card, level) ((card) | (((level) & 0xFF) << 8))
 #define CARD_INDEX(entry) ((entry) & 0xFF)
-#define CARD_UPGRADED(entry) (((entry) >> 8) & 1)
+#define CARD_LEVEL(entry) (((entry) >> 8) & 0xFF)
+#define CARD_UPGRADED(entry) (CARD_LEVEL(entry) != 0)
 
 /* One entry of an enemy's move cycle. */
 enum {
@@ -240,6 +244,9 @@ unsigned int battle_rand(void);
 
 int battle_hand_card(int slot);
 int battle_hand_up(int slot);
+int battle_hand_level(int slot);
+int battle_deck_level(int index);
+int battle_searing_damage(int level);
 int battle_find_card(const char *id);
 const CardDef *battle_card(int slot);
 int battle_card_cost(int slot);
@@ -316,6 +323,12 @@ void battle_test_choose_roll(int index, unsigned int roll);
 void battle_test_enemy_turn(int index);
 void battle_test_apply_relics(void);
 void battle_test_bag_of_marbles(void);
+int battle_test_card_can_upgrade(int index);
+int battle_test_can_upgrade_entry(int entry);
+int battle_test_upgrade_entry(int entry);
+int battle_test_entry_innate(int entry);
+int battle_test_entry_ethereal(int entry);
+void battle_test_apply_innate(void);
 #endif
 
 enum { POTION_HEAL = 0, POTION_FIRE, POTION_BLOCK, POTION_DRAW, POTION_ENERGY, POTION_STR, POTION_COUNT };

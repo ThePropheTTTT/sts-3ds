@@ -2779,6 +2779,33 @@ void card_test_demo_ui(int which) {
             g_run.deck[g_run.deck_count++] = CARD_ENTRY(idx, 0);
         }
         g_run.screen = SCREEN_CAMPFIRE;
+    } else if (which == 4) {
+        /* Searing Blow +1: the upgrade screen must still offer another level
+         * (16 -> 21) even though the card is already upgraded. */
+        g_run.deck_count = 0;
+        int sear = battle_find_card("Searing Blow");
+        g_run.deck[g_run.deck_count++] = CARD_ENTRY_LEVEL(sear, 1);
+        for (int i = 0; i < 9; i++) {
+            int idx = battle_find_card(DECK[i]);
+            g_run.deck[g_run.deck_count++] = CARD_ENTRY(idx, 0);
+        }
+        g_run.screen = SCREEN_UPGRADE;
+    } else if (which == 5) {
+        /* Five upgraded cards whose wording changes on upgrade; the focus
+         * starts on Ghostly+ and RIGHT walks through the rest. */
+        battle_test_spawn_act1(2);
+        g_battle.hand_count = 0;
+        g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(battle_find_card("Ghostly"), 1);
+        g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(battle_find_card("Forethought"), 1);
+        g_battle.hand[g_battle.hand_count++] =
+            CARD_ENTRY_LEVEL(battle_find_card("Searing Blow"), 2);
+        g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(battle_find_card("Discovery"), 1);
+        g_battle.hand[g_battle.hand_count++] = CARD_ENTRY(battle_find_card("Burn"), 1);
+        g_battle.energy = 3;
+        g_battle.phase = PHASE_PLAYER;
+        g_battle.turn = 1;
+        g_run.act = 1;
+        g_run.screen = SCREEN_FIGHT;
     } else {
         /* True Grit+: play it and leave the real PICK_EXHAUST_HAND picker up. */
         battle_test_spawn_act1(2);
@@ -3106,6 +3133,181 @@ static void test_batch17(void) {
           g_battle.discard_count > 0 && CARD_INDEX(g_battle.discard[0]) == grit_i, 1);
 }
 
+static void test_batch18(void) {
+    int sear = battle_find_card("Searing Blow");
+    int perf = battle_find_card("Perfected Strike");
+    int strike = battle_find_card("Strike_R");
+    int defend = battle_find_card("Defend_R");
+    int bash = battle_find_card("Bash");
+    int ghostly = battle_find_card("Ghostly");
+    int ghostly_armor = battle_find_card("Ghostly Armor");
+    int brut = battle_find_card("Brutality");
+    int burn = battle_find_card("Burn");
+    int fore = battle_find_card("Forethought");
+    int body = battle_find_card("Body Slam");
+    int apoth = battle_find_card("Apotheosis");
+    int wound = battle_find_card("Wound");
+
+    /* Searing Blow: each upgrade adds 4+timesUpgraded, so the curve is
+     * 12, 16, 21, 27... and canUpgrade stays true. */
+    check("searing curve 0", battle_searing_damage(0), 12);
+    check("searing curve 1", battle_searing_damage(1), 16);
+    check("searing curve 2", battle_searing_damage(2), 21);
+    check("searing curve 3", battle_searing_damage(3), 27);
+    check("searing can upgrade", battle_test_card_can_upgrade(sear), 1);
+    int se = CARD_ENTRY(sear, 0);
+    check("searing entry can", battle_test_can_upgrade_entry(se), 1);
+    se = battle_test_upgrade_entry(se);
+    check("searing level 1", CARD_LEVEL(se), 1);
+    check("searing level 1 can", battle_test_can_upgrade_entry(se), 1);
+    se = battle_test_upgrade_entry(se);
+    check("searing level 2", CARD_LEVEL(se), 2);
+    check("searing level 2 can", battle_test_can_upgrade_entry(se), 1);
+    g_run.deck_count = 1;
+    g_run.deck[0] = CARD_ENTRY(sear, 0);
+    g_run.screen = SCREEN_UPGRADE;
+    check("searing confirm 1", battle_confirm_upgrade(0), 1);
+    check("searing deck level 1", battle_deck_level(0), 1);
+    g_run.screen = SCREEN_UPGRADE;
+    check("searing confirm 2", battle_confirm_upgrade(0), 1);
+    check("searing deck level 2", battle_deck_level(0), 2);
+    fresh(200);
+    g_battle.hand[0] = CARD_ENTRY_LEVEL(sear, 2);
+    g_battle.hand_count = 1;
+    battle_play(0, 0);
+    check("searing +2 damage", 200 - g_battle.enemies[0].hp, 21);
+
+    /* Perfected Strike counts hand + draw + discard, and the card itself is
+     * still in hand when the damage is calculated.  Hand Perfected + draw
+     * Strike + discard Strike = three names containing 打击. */
+    fresh(200);
+    hand("Perfected Strike", 0);
+    g_battle.draw[0] = CARD_ENTRY(strike, 0);
+    g_battle.draw_count = 1;
+    g_battle.discard[0] = CARD_ENTRY(strike, 0);
+    g_battle.discard_count = 1;
+    battle_play(0, 0);
+    check("perfected counts discard", 200 - g_battle.enemies[0].hp, 12);
+    fresh(200);
+    hand("Perfected Strike", 1);
+    g_battle.draw[0] = CARD_ENTRY(strike, 0);
+    g_battle.draw_count = 1;
+    g_battle.discard[0] = CARD_ENTRY(strike, 0);
+    g_battle.discard_count = 1;
+    battle_play(0, 0);
+    check("perfected + magic", 200 - g_battle.enemies[0].hp, 15);
+
+    /* Burn+: the upgraded copy deals 4, not the base 2. */
+    fresh(200);
+    enemy_move_set(0, PREP1, 1);
+    hand("Burn", 1);
+    battle_end_turn();
+    check("burn + damage", g_battle.hp, 76);
+
+    /* Apparition: base is Ethereal, upgraded is not.  The base copy is
+     * exhausted, the upgraded copy is discarded with the rest of the hand. */
+    fresh(200);
+    enemy_move_set(0, PREP1, 1);
+    g_battle.hand[0] = CARD_ENTRY(ghostly, 0);
+    g_battle.hand[1] = CARD_ENTRY(ghostly, 1);
+    g_battle.hand_count = 2;
+    battle_end_turn_powers_for_test();
+    check("apparition base exhaust", g_battle.exhaust_count, 1);
+    int upgraded_in_discard = 0;
+    for (int i = 0; i < g_battle.discard_count; i++) {
+        if (CARD_INDEX(g_battle.discard[i]) == ghostly &&
+            CARD_LEVEL(g_battle.discard[i]) == 1) upgraded_in_discard = 1;
+    }
+    check("apparition + discarded", upgraded_in_discard, 1);
+
+    /* Innate flags: Brutality only after upgrade, Apparition only before it. */
+    check("brutality base not innate", battle_test_entry_innate(CARD_ENTRY(brut, 0)), 0);
+    check("brutality + innate", battle_test_entry_innate(CARD_ENTRY(brut, 1)), 1);
+    check("apparition base ethereal", battle_test_entry_ethereal(CARD_ENTRY(ghostly, 0)), 1);
+    check("apparition + not ethereal", battle_test_entry_ethereal(CARD_ENTRY(ghostly, 1)), 0);
+    check("ghostly armor ethereal", battle_test_entry_ethereal(CARD_ENTRY(ghostly_armor, 0)), 1);
+
+    /* initializeDeck moves innate cards to the top of the draw pile (the end
+     * of the array) while preserving the order of the other cards. */
+    fresh(200);
+    g_battle.draw[0] = CARD_ENTRY(strike, 0);
+    g_battle.draw[1] = CARD_ENTRY(brut, 1);
+    g_battle.draw[2] = CARD_ENTRY(defend, 0);
+    g_battle.draw_count = 3;
+    battle_test_apply_innate();
+    check("innate kept order 0", CARD_INDEX(g_battle.draw[0]), strike);
+    check("innate kept order 1", CARD_INDEX(g_battle.draw[1]), defend);
+    check("innate moved to top", CARD_INDEX(g_battle.draw[2]), brut);
+    check("innate level kept", CARD_LEVEL(g_battle.draw[2]), 1);
+
+    /* A real battle_start puts the upgraded Brutality in the opening hand. */
+    fresh(200);
+    g_run.deck_count = 0;
+    g_run.deck[g_run.deck_count++] = CARD_ENTRY(brut, 1);
+    for (int i = 0; i < 9; i++) {
+        g_run.deck[g_run.deck_count++] = CARD_ENTRY((i & 1) ? defend : strike, 0);
+    }
+    g_run.act = 1;
+    g_battle.rng = 0x1234567u;
+    battle_start(0);
+    int brutal_in_hand = 0;
+    for (int i = 0; i < g_battle.hand_count; i++) {
+        if (CARD_INDEX(g_battle.hand[i]) == brut && CARD_LEVEL(g_battle.hand[i]) == 1)
+            brutal_in_hand = 1;
+    }
+    check("brutality + opens in hand", brutal_in_hand, 1);
+
+    /* Upgrade eligibility: pure cost upgrades and special upgrades count. */
+    check("body slam can upgrade", battle_test_card_can_upgrade(body), 1);
+    check("apotheosis can upgrade", battle_test_card_can_upgrade(apoth), 1);
+    check("strike can upgrade", battle_test_card_can_upgrade(strike), 1);
+    check("wound cannot upgrade", battle_test_card_can_upgrade(wound), 0);
+    check("strike + cannot upgrade", battle_test_can_upgrade_entry(CARD_ENTRY(strike, 1)), 0);
+
+    /* Text overrides: the upgraded card face no longer lies. */
+    check("ghostly + no ethereal text", strstr(sts_cards[ghostly].text_up, "虚无") == NULL, 1);
+    check("discovery + no exhaust text", strstr(sts_cards[battle_find_card("Discovery")].text_up, "消耗") == NULL, 1);
+    check("thinking + no exhaust text", strstr(sts_cards[battle_find_card("Thinking Ahead")].text_up, "消耗") == NULL, 1);
+    check("limit + no exhaust text", strstr(sts_cards[battle_find_card("Limit Break")].text_up, "消耗") == NULL, 1);
+    check("brutality + says innate", strstr(sts_cards[brut].text_up, "固有") != NULL, 1);
+    check("burn + says 4", strstr(sts_cards[burn].text_up, "4") != NULL, 1);
+    check("armaments + all cards", strstr(sts_cards[battle_find_card("Armaments")].text_up, "所有") != NULL, 1);
+    check("forethought + any cards", strstr(sts_cards[fore].text_up, "任意") != NULL, 1);
+    check("perfected + magic 3", strstr(sts_cards[perf].text_up, "+3") != NULL, 1);
+    check("searing + says 16", strstr(sts_cards[sear].text_up, "16") != NULL, 1);
+
+    /* Forethought+: choose any number of cards, put them on the bottom and
+     * make each free until played. */
+    fresh(200);
+    g_battle.hand[0] = CARD_ENTRY(fore, 1);
+    g_battle.hand_count = 1;
+    hand_add("Strike_R");
+    hand_add("Defend_R");
+    hand_add("Bash");
+    battle_play(0, 0);
+    check("forethought + picker", g_run.screen, SCREEN_PICK);
+    check("forethought + extra", battle_pick_extra(), -1);
+    check("forethought + multi", battle_pick_multi(), 1);
+    check("forethought + count", battle_pick_count(), 3);
+    battle_pick_toggle(0);
+    battle_pick_toggle(1);
+    check("forethought + marked", battle_pick_marked_count(), 2);
+    battle_pick_confirm_multi();
+    check("forethought + screen", g_run.screen, SCREEN_FIGHT);
+    check("forethought + hand left", g_battle.hand_count, 1);
+    check("forethought + keeps bash", CARD_INDEX(g_battle.hand[0]), bash);
+    check("forethought + draw", g_battle.draw_count, 2);
+    /* The first card the player ticked is drawn first after the old pile,
+     * because the last ticked card is the one sitting deepest. */
+    check("forethought + bottom defend", CARD_INDEX(g_battle.draw[0]), defend);
+    check("forethought + bottom strike", CARD_INDEX(g_battle.draw[1]), strike);
+    battle_draw_for_test(2);
+    check("forethought + draws strike first", CARD_INDEX(g_battle.hand[1]), strike);
+    check("forethought + draws defend second", CARD_INDEX(g_battle.hand[2]), defend);
+    check("forethought + free strike", g_battle.zero_once[strike], 1);
+    check("forethought + free defend", g_battle.zero_once[defend], 1);
+}
+
 void card_test_run(void) {
     s_cases = 0;
     s_fails = 0;
@@ -3128,6 +3330,7 @@ void card_test_run(void) {
     test_batch15();
     test_batch16();
     test_batch17();
+    test_batch18();
     g_run.screen = SCREEN_MAP;
     audio_sfx_mute(0);
 }

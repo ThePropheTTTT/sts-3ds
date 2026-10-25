@@ -40,9 +40,30 @@ def c_string(text: str) -> str:
 
 
 TEXT_UP_OVERRIDES = {
-    # TrueGrit.java replaces UPGRADE_DESCRIPTION, but the zhs card JSON only
-    # carries the base description.  Keep the upgraded wording in one place.
+    # Cards whose upgrade changes wording, keywords or targets instead of just
+    # one number.  The zhs card JSON keeps the base text for most of them, so
+    # these strings are taken from the game's own UPGRADE_DESCRIPTION text.
     "True Grit": "获得 {block} 点格挡。\n选择一张手牌消耗。",
+    "Ghostly": "获得1层无实体。\n消耗。",
+    "Blind": "给予所有敌人 {magic} 层虚弱。",
+    "Trip": "给予所有敌人 {magic} 层易伤。",
+    "Discovery": "从3张随机牌中选择1张加入你的手牌。这张牌在本回合耗能变为0。",
+    "Enlightenment": "在本场战斗，你当前手牌中所有牌的耗能降低到1。",
+    "Forethought": "将手牌中的任意张牌放到抽牌堆的底部。\n并且它们在被打出之前，耗能变为0。",
+    "Secret Technique": "从抽牌堆中选择一张技能牌放入你的手牌。",
+    "Secret Weapon": "从抽牌堆中选择一张攻击牌放入你的手牌。",
+    "Thinking Ahead": "抽2张牌，然后将手牌中的一张牌放到你抽牌堆的顶端。",
+    "Transmutation": "在你的手牌中加入 X 张升级过的随机无色牌。它们在本回合的耗能变为0。\n消耗。",
+    "Armaments": "获得 {block} 点格挡。\n在本场战斗中升级手牌中的所有牌。",
+    "Bloodletting": "获得 E E E。\n失去 3 点生命。",
+    "Brutality": "固有。\n在你的回合开始时，你失去1点生命，抽1张牌。",
+    "Double Tap": "在这个回合，你打出的下 {magic} 张攻击牌会打出两次。",
+    "Dual Wield": "将你手牌中的一张攻击或能力牌复制 {magic} 张。",
+    "Limit Break": "将你的力量翻倍。",
+    "Perfected Strike": "造成 {damage} 点伤害。\n你每有一张名字中有打击的牌，伤害+{magic}。",
+    "Burn": "不能被打出。\n在你的回合结束时，你受到{magic}点伤害。",
+    "Sentinel": "获得 {block} 点格挡。\n如果这张牌被消耗，\n获得 E E E。",
+    "Searing Blow": "造成 16 点伤害。\n能被多次升级。",
 }
 
 
