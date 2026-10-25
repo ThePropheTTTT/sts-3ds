@@ -136,6 +136,17 @@ build/hello3ds.elf    1264668 bytes  EXEC / ARM / entry 0x100000
 - `port/build.sh` 在首次构建时用 `smdhtool` 生成 `build/sts3ds.smdh`，并传给 `3dsxtool --smdh=`；`tools/preflight.py` 会检查它的 `SMDH` magic 和大小。改了图标或标题后删掉旧 `.smdh` 再构建。
 - 已在 Azahar 上验证构建、启动自检、日志与覆盖层；**真机首次运行仍按 `docs/06-hardware-test.md` 走一遍**，先看 `sdmc:/3ds/sts3ds/log.txt` 的最后 `[stage]`。
 
+## 第 1 幕遭遇池
+
+第 1 幕普通怪不再由 `setup_encounter` 按层数挑固定组合，而是按 `MonsterHelper.java:832-847` 的两张表抽签（`battle.c` 的 `WEAK_POOL` / `STRONG_POOL` / `setup_act1_pool_encounter`）：
+
+- 前 3 场普通怪只从弱池取：蓝奴隶贩子、邪教徒、颚虫、两只虱虫、两只小史莱姆；
+- 第 4 场起从强池取：地精团、大史莱姆、掠夺者、Exordium Thugs、Exordium Wildlife、红奴隶贩子、三只虱虫；
+- 场次来自 `act1_monster_rooms()`，即地图上已经 `visited` 的 `NODE_MONSTER` 房间数（`map_enter` 在 `battle_start` 之前就标了 visited，所以当前这场本身也计入）；
+- 抽签用 `g_map.map_seed` + 幕数 + 弱/强池做种子，对该池做 Fisher-Yates 洗牌后按下标取，因此同一张地图的同一场次总是同一组怪（可用 `battle_test_encounter_id(n)` 在测试里复现），相邻场次不会重复同一格。
+
+已知缺口：`MonsterHelper` 的 "Lots of Slimes"（5 只小史莱姆）没有接——`Enemy enemies[4]` 只有 4 格，且 5 敌布局还没写；`Mugger` 只出现在第 2 幕的 "2 Thieves"；第 2/3 幕仍是 `setup_act2` 的脚本化摆位。
+
 ## 模拟器输入的边界
 
 Azahar 的 `GRenderWindow::mousePressEvent` 会直接忽略 `Qt::MouseEventSynthesizedBySystem`。从主机发 `PostMessage`/`SendMessage` 鼠标消息、`mouse_event` 或 `SendInput`，在 Qt 看来都是合成鼠标，因此无法用它们验收触屏拖牌；Windows 的 `InitializeTouchInjection`/`InjectTouchInput` 在当前会话也会返回 87/5（参数错误/拒绝访问）。触屏请在真机上用手写笔/手指验收。

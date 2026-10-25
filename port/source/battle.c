@@ -1660,8 +1660,127 @@ static void setup_act1_wildlife(void) {
     setup_act1_weak_wildlife(1);
 }
 
+/* Act 1's encounter pools (MonsterHelper.java:832-847).  AbstractDungeon keeps a
+ * monster queue per act: the first three fights of an act come from the weak
+ * list, every later one from the strong list, and a fight is never repeated
+ * back to back.  The queue is re-derived from the map seed plus the number of
+ * monster rooms already played, so it needs no save field. */
+enum {
+    ENC_BLUE_SLAVER = 0,
+    ENC_CULTIST,
+    ENC_JAW_WORM,
+    ENC_TWO_LOUSE,
+    ENC_SMALL_SLIMES,
+    ENC_GREMLIN_GANG,
+    ENC_LARGE_SLIME,
+    ENC_LOOTER,
+    ENC_THUGS,
+    ENC_WILDLIFE,
+    ENC_RED_SLAVER,
+    ENC_THREE_LOUSE,
+};
+
+static const unsigned char WEAK_POOL[] = {
+    ENC_BLUE_SLAVER, ENC_CULTIST, ENC_JAW_WORM, ENC_TWO_LOUSE, ENC_SMALL_SLIMES,
+};
+static const unsigned char STRONG_POOL[] = {
+    ENC_GREMLIN_GANG, ENC_LARGE_SLIME, ENC_LOOTER, ENC_THUGS,
+    ENC_WILDLIFE, ENC_RED_SLAVER, ENC_THREE_LOUSE,
+};
+
+#define WEAK_POOL_COUNT 5
+#define STRONG_POOL_COUNT 7
+#define WEAK_POOL_FIGHTS 3
+
+/* Monster rooms the player has stood in this act, the current one included;
+ * map_enter marks the room before battle_start runs. */
+static int act1_monster_rooms(void) {
+    int n = 0;
+    for (int r = 0; r < MAP_ROWS; r++) {
+        for (int c = 0; c < MAP_COLS; c++) {
+            if (g_map.visited[r][c] && g_map.type[r][c] == NODE_MONSTER) n++;
+        }
+    }
+    return n;
+}
+
+int battle_test_encounter_id(int n) {
+    int weak = n < WEAK_POOL_FIGHTS;
+    const unsigned char *pool = weak ? WEAK_POOL : STRONG_POOL;
+    int count = weak ? WEAK_POOL_COUNT : STRONG_POOL_COUNT;
+    unsigned int seed = g_map.map_seed ? g_map.map_seed : 0x51F3u;
+    seed ^= (unsigned int)g_run.act * 0x9E3779B9u;
+    seed ^= weak ? 0x5A5A5A5Au : 0xA5A5A5A5u;
+    if (seed == 0) seed = 0x1234567u;
+
+    unsigned char order[STRONG_POOL_COUNT];
+    for (int i = 0; i < count; i++) order[i] = pool[i];
+    for (int i = count - 1; i > 0; i--) {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        int j = (int)(seed % (unsigned int)(i + 1));
+        unsigned char tmp = order[i];
+        order[i] = order[j];
+        order[j] = tmp;
+    }
+    return order[weak ? n : (n - WEAK_POOL_FIGHTS) % count];
+}
+
+static void setup_act1_pool_encounter(int n) {
+    switch (battle_test_encounter_id(n)) {
+    case ENC_BLUE_SLAVER:
+        g_battle.enemy_count = 1;
+        setup_act1_slaver(0, 0);
+        break;
+    case ENC_CULTIST:
+        g_battle.enemy_count = 1;
+        setup_act1_cultist(0);
+        break;
+    case ENC_JAW_WORM:
+        g_battle.enemy_count = 1;
+        setup_act1_jaw_worm(0);
+        choose_move(&g_battle.enemies[0]);
+        break;
+    case ENC_TWO_LOUSE:
+        setup_act1_louses(2);
+        break;
+    case ENC_SMALL_SLIMES:
+        setup_act1_small_slimes();
+        break;
+    case ENC_GREMLIN_GANG:
+        setup_act1_gremlin_gang();
+        break;
+    case ENC_LARGE_SLIME:
+        g_battle.enemy_count = 1;
+        setup_act1_large_slime((int)(battle_rand() & 1));
+        break;
+    case ENC_LOOTER:
+        g_battle.enemy_count = 1;
+        setup_act1_looter(0);
+        break;
+    case ENC_THUGS:
+        setup_act1_thugs();
+        break;
+    case ENC_WILDLIFE:
+        setup_act1_wildlife();
+        break;
+    case ENC_RED_SLAVER:
+        g_battle.enemy_count = 1;
+        setup_act1_slaver(0, 1);
+        break;
+    case ENC_THREE_LOUSE:
+        setup_act1_louses(3);
+        break;
+    default:
+        g_battle.enemy_count = 1;
+        setup_act1_jaw_worm(0);
+        choose_move(&g_battle.enemies[0]);
+        break;
+    }
+}
+
 static void setup_encounter(int kind) {
-    int depth = g_map.row < 0 ? 0 : g_map.row;
     g_battle.enemy_count = 0;
 
     if (g_run.act >= 2) {
@@ -1692,35 +1811,9 @@ static void setup_encounter(int kind) {
         choose_move(nob);
         return;
     }
-    /* The weak-pool slice: one Cultist on the fourth row of the map.  The rest
-     * of the pool (MonsterHelper.java:835-839) waits on the monsters it uses. */
-    if (depth == 4) {
-        g_battle.enemy_count = 1;
-        setup_act1_cultist(0);
-        return;
-    }
-    if (depth <= 2 || depth > 7) {
-        add_enemy(0, "酸液史莱姆", 28 + (int)(battle_rand() % 5));
-        add_enemy(1, "酸液史莱姆", 28 + (int)(battle_rand() % 5));
-        for (int i = 0; i < 2; i++) {
-            Enemy *e = &g_battle.enemies[i];
-            e->moves = SLIME_MOVES;
-            e->move_count = 3;
-            e->last_move = 255;
-            e->last_before = 255;
-            choose_move(e);
-        }
-        g_battle.enemy_count = 2;
-    } else {
-        add_enemy(0, "颚虫", 40 + (int)(battle_rand() % 5));
-        Enemy *e = &g_battle.enemies[0];
-        e->moves = JAW_WORM_MOVES;
-        e->move_count = 3;
-        e->last_move = 255;
-        e->last_before = 255;
-        g_battle.enemy_count = 1;
-        choose_move(e);
-    }
+    /* Regular monster rooms: walk the act's weak / strong queue. */
+    int rooms = act1_monster_rooms();
+    setup_act1_pool_encounter(rooms > 0 ? rooms - 1 : 0);
 }
 
 /* CardGroup.initializeDeck: after the shuffle, innate cards are moved to the
@@ -3936,12 +4029,23 @@ void battle_test_spawn_act1(int which) {
         setup_encounter(NODE_BOSS);
     } else if (which == 1) {
         setup_encounter(NODE_ELITE);
+    } else if (which == 3) {
+        /* One Jaw Worm, opening with Chomp. */
+        g_map.row = 3;
+        g_battle.enemy_count = 1;
+        setup_act1_jaw_worm(0);
+        choose_move(&g_battle.enemies[0]);
     } else if (which == 2) {
+        /* Two medium Acid Slimes: the act 1 opener the card tests lean on. */
         g_map.row = 0;
-        setup_encounter(NODE_MONSTER);
+        g_battle.enemy_count = 2;
+        setup_act1_slime_m(0, 1);
+        setup_act1_slime_m(1, 1);
+        for (int i = 0; i < 2; i++) choose_move(&g_battle.enemies[i]);
     } else if (which == 4) {
         g_map.row = 4;
-        setup_encounter(NODE_MONSTER);
+        g_battle.enemy_count = 1;
+        setup_act1_cultist(0);
     } else if (which == 5) {
         g_map.row = 3;
         setup_act1_louses(2);

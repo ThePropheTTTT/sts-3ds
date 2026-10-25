@@ -3839,6 +3839,83 @@ static void test_mixed_encounters(void) {
     check("wildlife demo", g_battle.enemy_count, 2);
 }
 
+static int weak_encounter(int id) { return id >= 0 && id <= 4; }
+
+static int encounter_enemies(int id) {
+    switch (id) {
+    case 0: return 1;   /* Blue Slaver */
+    case 1: return 1;   /* Cultist */
+    case 2: return 1;   /* Jaw Worm */
+    case 3: return 2;   /* 2 Louse */
+    case 4: return 2;   /* Small Slimes */
+    case 5: return 4;   /* Gremlin Gang */
+    case 6: return 1;   /* Large Slime */
+    case 7: return 1;   /* Looter */
+    case 8: return 2;   /* Exordium Thugs */
+    case 9: return 2;   /* Exordium Wildlife */
+    case 10: return 1;  /* Red Slaver */
+    case 11: return 3;  /* 3 Louse */
+    default: return 0;
+    }
+}
+
+static void test_encounter_pool(void) {
+    memset(&g_map, 0, sizeof(g_map));
+    g_map.map_seed = 0x1234567u;
+    g_run.act = 1;
+
+    /* The first three monster rooms come from the weak list (MonsterHelper's
+     * uploadEnemyData weak pool), everything after that from the strong one. */
+    int weak_ok = 1, strong_ok = 1, distinct_weak = 1;
+    int first = -1;
+    for (int n = 0; n < 3; n++) {
+        int id = battle_test_encounter_id(n);
+        if (!weak_encounter(id)) weak_ok = 0;
+        if (id == first) distinct_weak = 0;
+        first = id;
+    }
+    for (int n = 3; n < 12; n++) {
+        if (weak_encounter(battle_test_encounter_id(n))) strong_ok = 0;
+    }
+    check("act 1 first rooms are weak", weak_ok, 1);
+    check("act 1 later rooms are strong", strong_ok, 1);
+    check("act 1 weak rooms differ", distinct_weak, 1);
+
+    /* The queue is a pure function of the map seed, and neighbours differ. */
+    int ids[12];
+    for (int n = 0; n < 12; n++) ids[n] = battle_test_encounter_id(n);
+    int stable = 1, no_repeat = 1, bounds = 1;
+    for (int n = 0; n < 12; n++) {
+        if (battle_test_encounter_id(n) != ids[n]) stable = 0;
+        if (n > 0 && ids[n] == ids[n - 1]) no_repeat = 0;
+        if (ids[n] < 0 || ids[n] > 11) bounds = 0;
+    }
+    check("act 1 pool is stable", stable, 1);
+    check("act 1 pool does not repeat", no_repeat, 1);
+    check("act 1 pool stays in range", bounds, 1);
+
+    g_map.map_seed = 0x7654321u;
+    int differs = 0;
+    for (int n = 0; n < 12; n++) {
+        if (battle_test_encounter_id(n) != ids[n]) differs = 1;
+    }
+    check("act 1 pool follows the seed", differs, 1);
+
+    /* A real monster room spawns the encounter the queue names. */
+    fresh(1);
+    memset(&g_map, 0, sizeof(g_map));
+    g_map.map_seed = 0x1234567u;
+    g_run.act = 1;
+    for (int r = 0; r < 4; r++) {
+        g_map.type[r][0] = NODE_MONSTER;
+        g_map.visited[r][0] = 1;
+    }
+    g_map.row = 3;
+    battle_start(NODE_MONSTER);
+    check("pool fight count", g_battle.enemy_count, encounter_enemies(battle_test_encounter_id(3)));
+    check("pool fight has an enemy", g_battle.enemy_count >= 1, 1);
+}
+
 void card_test_run(void) {
     s_cases = 0;
     s_fails = 0;
@@ -3870,6 +3947,7 @@ void card_test_run(void) {
     test_large_slime();
     test_looter();
     test_mixed_encounters();
+    test_encounter_pool();
     g_run.screen = SCREEN_MAP;
     audio_sfx_mute(0);
 }
