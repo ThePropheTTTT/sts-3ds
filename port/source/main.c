@@ -50,12 +50,12 @@ static C2D_SpriteSheet s_act_sheets[3];
 static C2D_Image s_act_img[3];
 static C2D_SpriteSheet s_mon_sheet;
 static C2D_SpriteSheet s_mon_sheet_ref;
-static C2D_Image s_mon_img[34];
-static Tex3DS_SubTexture s_mon_subs[34];
+static C2D_Image s_mon_img[37];
+static Tex3DS_SubTexture s_mon_subs[37];
 
 /* 1024x1024 page produced by tools/extract_monsters.py (8x8 cells of 96px).
  * NULL means the bake did not look right yet, so the placeholder box is used. */
-static const char *MON_KEYS[34] = {
+static const char *MON_KEYS[37] = {
     "球体守卫", "史莱姆老大", "勇者", "酸液史莱姆",
     "尖刺史莱姆", "颚虫", "地精大块头", "红虱虫",
     "真菌怪", "邪教徒", "寄生兽", "异鸟",
@@ -65,10 +65,11 @@ static const char *MON_KEYS[34] = {
     "地精首领", "火大地精", "卑鄙地精", "胖地精", "持盾地精", "地精法师",
     "铜球", "虱虫",
     "小酸液史莱姆", "小尖刺史莱姆", "掠夺者", "打劫的",
+    "哨卫", "蛇花", "异蛇",
 };
 
 static int monster_slot(const char *name) {
-    for (int i = 0; i < 34; i++) {
+    for (int i = 0; i < 37; i++) {
         if (MON_KEYS[i] && strcmp(name, MON_KEYS[i]) == 0) return i;
     }
     return -1;
@@ -470,7 +471,7 @@ static void load_art(void) {
     if (s_mon_sheet) {
         C2D_Image img = C2D_SpriteSheetGetImage(s_mon_sheet, 0);
         s_vis_tex = s_vis_tex ? s_vis_tex : img.tex;
-        for (int i = 0; i < 34; i++) {
+        for (int i = 0; i < 37; i++) {
             C2D_Image one = {img.tex, NULL};
             Tex3DS_SubTexture *sub = &s_mon_subs[i];
             float x = (float)((i % 8) * 96);
@@ -2041,6 +2042,8 @@ static int status_collect(StatusRow *rows, int max) {
                    "免疫负面效果", buff);
     n = status_add(rows, n, max, "无实体", g_battle.intangible,
                    "受到的伤害降为 1", buff);
+    n = status_add(rows, n, max, "困惑", g_battle.confused,
+                   "抽到的牌费用随机", debuff);
     if (n == player_start) {
         n = status_header(rows, n, max, "  无状态", COL_DIM);
     }
@@ -2070,6 +2073,8 @@ static int status_collect(StatusRow *rows, int max) {
                        "回合结束时恢复力量", debuff);
         n = status_add(rows, n, max, "壁垒", e->barricade,
                        "格挡在回合开始时不消失", buff);
+        n = status_add(rows, n, max, "可塑", e->malleable_amt,
+                       "每次受击获得更多格挡", buff);
         if (e->stasis_card >= 0) {
             snprintf(buf, sizeof(buf), "静滞  %s",
                      sts_cards[CARD_INDEX(e->stasis_card)].name);
@@ -2383,6 +2388,28 @@ static void draw_fight_top(void) {
             snprintf(intent, sizeof(intent), "逃跑");
             intent_color = RGB(200, 200, 200);
             break;
+        case MOVE_DAZED:
+            /* Sentry Bolt: a DEBUFF intent that reads how many Dazed it adds. */
+            snprintf(intent, sizeof(intent), "晕眩 %d", value);
+            intent_color = RGB(200, 150, 240);
+            break;
+        case MOVE_SPORES:
+            /* Snake Plant Spores: Frail and Weak, in the order they land. */
+            snprintf(intent, sizeof(intent), "脆弱 %d 虚弱 %d", value2, value);
+            intent_color = RGB(200, 150, 240);
+            break;
+        case MOVE_GLARE:
+            snprintf(intent, sizeof(intent), "困惑");
+            intent_color = RGB(200, 150, 240);
+            break;
+        case MOVE_HEAL_ALL:
+            snprintf(intent, sizeof(intent), "治疗 %d", value);
+            intent_color = RGB(150, 200, 150);
+            break;
+        case MOVE_BUFF_ALL:
+            snprintf(intent, sizeof(intent), "力量 +%d", value);
+            intent_color = RGB(200, 180, 120);
+            break;
         default:
             intent[0] = 0;
             break;
@@ -2399,7 +2426,8 @@ static void draw_fight_top(void) {
             } else if (kind == MOVE_BUFF || kind == MOVE_ANGER || kind == MOVE_FLY ||
                        kind == MOVE_SPAWN || kind == MOVE_REVIVE ||
                        kind == MOVE_COMMAND || kind == MOVE_CHARGE ||
-                       kind == MOVE_RITUAL) {
+                       kind == MOVE_RITUAL || kind == MOVE_HEAL_ALL ||
+                       kind == MOVE_BUFF_ALL) {
                 icon = 5;
             } else if (kind == MOVE_DEFEND || kind == MOVE_DEFEND_BUFF ||
                        kind == MOVE_SMOKE ||
@@ -4084,7 +4112,9 @@ int main(int argc, char **argv) {
              * Exordium Wildlife (37), Lots of Slimes (38), then the city's
              * line-ups: the Mugger (39), three Byrds (40), two Thieves (41),
              * Chosen and Byrds (42), Cultist and Chosen (43), three Cultists
-             * (44), Shelled Parasite and Fungi (45), Purity's multi-select
+             * (44), Shelled Parasite and Fungi (45), Sentry and Sphere (46),
+             * Snake Plant (47), Snecko (48), Centurion and Healer (49),
+             * Purity's multi-select
              * (19) and Forethought's bottom-pick (20).  The two
              * draw-pile pickers (16, 17) are skipped here: they end on
              * SCREEN_PICK, where B only cancels the picker, so B cannot cycle
@@ -4093,7 +4123,7 @@ int main(int argc, char **argv) {
                 card_test_demo_fight(s_boss_demo);
                 s_boss_demo++;
                 if (s_boss_demo == 16 || s_boss_demo == 17) s_boss_demo = 18;
-                if (s_boss_demo > 45) s_boss_demo = 7;
+                if (s_boss_demo > 49) s_boss_demo = 7;
             }
         }
         update_play_fx();

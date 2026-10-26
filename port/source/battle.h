@@ -68,6 +68,11 @@ enum {
     MOVE_MUG,            /* Looter: value = damage, also steals 15 gold */
     MOVE_SMOKE,          /* Looter Smoke Bomb: value = block, then it escapes */
     MOVE_ESCAPE,         /* Looter: leaves the fight with the stolen gold */
+    MOVE_DAZED,          /* Sentry Bolt: value = Dazed cards put into the discard */
+    MOVE_SPORES,         /* Snake Plant Spores: value = Weak, value2 = Frail */
+    MOVE_GLARE,          /* Snecko Glare: Confusion on the player */
+    MOVE_HEAL_ALL,       /* Healer: value = HP restored to every living monster */
+    MOVE_BUFF_ALL,       /* Healer: value = Strength given to every living monster */
 };
 
 /* Act 2 uses the same room chances as Act 1 (TheCity.java), so only the
@@ -122,6 +127,8 @@ typedef struct {
     unsigned char curl_up;       /* CurlUpPower block, gained the first time it is hit */
     unsigned char curl_done;     /* CurlUpPower: the one gain has fired */
     unsigned char spores;        /* SporeCloudPower: Vulnerable handed to the player on death */
+    unsigned char malleable;     /* MalleablePower: block gained per hit, base 3 */
+    unsigned char malleable_amt; /* MalleablePower.amount: grows with every hit */
     unsigned char escaped;       /* Looter: left the fight; counts as gone */
     unsigned char mug_count;     /* Looter: Mugs and Lunges so far */
     short stolen_gold;           /* Looter: gold taken, paid back only if it dies */
@@ -212,6 +219,8 @@ typedef struct {
     unsigned char zero_once[160];   /* Forethought: cost 0 until the card is played */
     unsigned char cost_one_turn[160];   /* Enlightenment: cost 1 this turn */
     unsigned char cost_one_combat[160]; /* Enlightenment+: cost 1 for the combat */
+    int confused;                   /* ConfusionPower: every drawn card rolls its cost */
+    unsigned char confused_cost[160];   /* Confusion: rolled cost + 1, 0 = not rolled */
     int force_exhaust;              /* the next card played is exhausted (Havoc) */
     int pick_mode;       /* PICK_* while SCREEN_PICK is up */
     int pick_extra;      /* draw count / copy count / chosen count */
@@ -332,7 +341,8 @@ void battle_test_damage_enemy(int index, int amount);
 void battle_test_spawn_slavers(void);
 /* 0 two Byrds, 1 Chosen, 2 Shelled Parasite, 3 Spheric Guardian, 4 Mugger,
  * 5 three Byrds, 6 two Thieves, 7 Chosen and Byrds, 8 Cultist and Chosen,
- * 9 three Cultists, 10 Shelled Parasite and Fungi. */
+ * 9 three Cultists, 10 Shelled Parasite and Fungi, 11 Sentry and Sphere,
+ * 12 Snake Plant, 13 Snecko, 14 Centurion and Healer. */
 void battle_test_spawn_act2_monster(int which);
 /* The act 2 encounter picked for the n-th monster room of the act, and the
  * same walk the real city monster rooms use. */

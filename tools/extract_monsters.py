@@ -91,6 +91,11 @@ SPINE_EXTRA = [
     ("小尖刺史莱姆", "images/monsters/theBottom/slimeAltS"),
     ("掠夺者", "images/monsters/theBottom/looter"),
     ("打劫的", "images/monsters/theCity/looterAlt"),
+    # The last four STRONG line-ups add these three; the Centurion and the
+    # Healer reuse the tank and cleric skeletons already on the page.
+    ("哨卫", "images/monsters/theBottom/sentry"),
+    ("蛇花", "images/monsters/theCity/snakePlant"),
+    ("异蛇", "images/monsters/theCity/reptile"),
 ]
 
 

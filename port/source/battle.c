@@ -210,6 +210,15 @@ static int card_magic(const CardDef *c, int up) { return c->magic + (up ? c->up_
 int battle_cost_of(const CardDef *c, int up) {
     if (!c) return 0;
     int base = up ? c->cost_up : c->cost;
+    /* ConfusionPower.onCardDraw gave the drawn card a random cost of 0..3 and
+     * that cost sticks to it for the combat.  The port remembers the roll per
+     * card index, the same way the other cost changes are kept. */
+    {
+        int index = (int)(c - sts_cards);
+        if (index >= 0 && index < 160 && g_battle.confused_cost[index] && base >= 0) {
+            base = g_battle.confused_cost[index] - 1;
+        }
+    }
     /* Cost made free for the rest of the combat by Discovery, Madness,
      * Chrysalis, Metamorphosis or Infernal Blade.  Vanilla scopes some of
      * these to "this turn"; the port scopes all of them to the combat. */
@@ -466,6 +475,37 @@ static const EnemyMove ORB_MOVES[] = {
     {MOVE_DEFEND, 25, 0, 0},       /* 2 Initial Block: +25 */
     {MOVE_BLOCK_ATTACK, 15, 10, 0},/* 3 Block Attack: +15 then 10 */
     {MOVE_ATTACK_DEBUFF, 10, 0, 5},/* 4 Frail Attack: 10 + 5 Frail */
+};
+/* Sentry.java: Beam 9, Bolt puts 2 Dazed in the discard pile.  Its first move
+ * depends on its slot (even slots Bolt first) and the two then alternate. */
+static const EnemyMove SENTRY_MOVES[] = {
+    {MOVE_ATTACK, 9, 0, 0},        /* 4 Beam */
+    {MOVE_DAZED, 2, 0, 0},         /* 3 Bolt */
+};
+/* SnakePlant.java: Chomp is three bites of 7, Spores is 2 Frail and 2 Weak. */
+static const EnemyMove SNAKE_PLANT_MOVES[] = {
+    {MOVE_MULTI, 7, 3, 0},         /* 1 Chomp */
+    {MOVE_SPORES, 2, 2, 0},        /* 2 Spores */
+};
+/* Snecko.java: Glare first, then Bite 15 or Tail 8 + 2 Vulnerable. */
+static const EnemyMove SNECKO_MOVES[] = {
+    {MOVE_GLARE, 0, 0, 0},         /* 1 Glare */
+    {MOVE_ATTACK, 15, 0, 0},       /* 2 Bite */
+    {MOVE_ATTACK_DEBUFF, 8, 2, 0}, /* 3 Tail */
+};
+/* Centurion.java: Slash 12, Fury 6 x3, Protect 15 block to a random monster
+ * (itself included, so value2 flags that). */
+static const EnemyMove CENTURION_MOVES[] = {
+    {MOVE_ATTACK, 12, 0, 0},       /* 1 Slash */
+    {MOVE_MULTI, 6, 3, 0},         /* 3 Fury */
+    {MOVE_PROTECT, 15, 1, 0},      /* 2 Protect */
+};
+/* Healer.java: Attack 8 + 2 Frail, Heal 16 to every monster, +2 Strength to
+ * every monster. */
+static const EnemyMove HEALER_MOVES[] = {
+    {MOVE_ATTACK_DEBUFF, 8, 0, 2}, /* 1 Attack */
+    {MOVE_HEAL_ALL, 16, 0, 0},     /* 2 Heal */
+    {MOVE_BUFF_ALL, 2, 0, 0},      /* 3 Buff */
 };
 /* Book of Stabbing (BookOfStabbing.java): STAB hits 1.stabCount times, so the
  * hit count lives on the enemy, not in the move. */
@@ -786,6 +826,59 @@ static void choose_move_roll(Enemy *e, unsigned int roll) {
          * takeTurn, so a fresh thief starts with Mug and every later step sets
          * its own move. */
         e->move_index = 0;
+        return;
+    }
+    if (e->moves == SENTRY_MOVES) {
+        /* Sentry.getMove: the first move follows the slot's parity (even slots
+         * Bolt first), then Beam and Bolt alternate forever. */
+        int slot = (int)(e - g_battle.enemies);
+        if (e->first_turn) e->move_index = (slot % 2 == 0) ? 1 : 0;
+        else e->move_index = e->last_move == 0 ? 1 : 0;
+        return;
+    }
+    if (e->moves == SNAKE_PLANT_MOVES) {
+        /* SnakePlant.getMove (A16 and below): 65% of the rolls prefer Chomp,
+         * and Spores never runs twice in a row. */
+        if (roll < 65) e->move_index = last_two(e, 0) ? 1 : 0;
+        else e->move_index = e->last_move == 1 ? 0 : 1;
+        return;
+    }
+    if (e->moves == SNECKO_MOVES) {
+        /* Snecko.getMove: Glare on the first turn, then 40% Tail and Bite
+         * otherwise, with Bite never running twice in a row. */
+        if (e->first_turn) {
+            e->move_index = 0;
+            return;
+        }
+        if (roll < 40) e->move_index = 2;
+        else e->move_index = last_two(e, 1) ? 2 : 1;
+        return;
+    }
+    if (e->moves == CENTURION_MOVES) {
+        /* Centurion.getMove: Protect only when it can hand the block to a
+         * second living monster, and Fury takes its place in a duel. */
+        int alive = alive_count();
+        if (roll >= 65 && !last_two(e, 1) && !last_two(e, 2)) {
+            e->move_index = alive > 1 ? 2 : 1;
+        } else if (!last_two(e, 0)) {
+            e->move_index = 0;
+        } else {
+            e->move_index = alive > 1 ? 2 : 1;
+        }
+        return;
+    }
+    if (e->moves == HEALER_MOVES) {
+        /* Healer.getMove: heal once the room is missing more than 15 HP, then
+         * 40% Attack, and Buff only when it has not run twice. */
+        int need = 0;
+        for (int i = 0; i < g_battle.enemy_count; i++) {
+            const Enemy *o = &g_battle.enemies[i];
+            if (o->hp > 0) need += o->max_hp - o->hp;
+        }
+        if (need > 15 && !last_two(e, 1)) e->move_index = 1;
+        else if (roll >= 40 && !last_two(e, 0)) e->move_index = 0;
+        else if (!last_two(e, 2)) e->move_index = 2;
+        else e->move_index = 0;
         return;
     }
     if (e->moves == SLIME_MOVES) {
@@ -1236,9 +1329,85 @@ static void setup_act2_mugger(int slot) {
     choose_move(e);              /* first turn: Mug */
 }
 
+/* Sentry.java: 38-42 HP, Artifact 1 on spawn.  Only its own slot decides
+ * whether it opens with Bolt or Beam, so the lineup passes the slot in. */
+static void setup_act2_sentry(int slot) {
+    add_enemy(slot, "哨卫", 38 + (int)(battle_rand() % 5));
+    Enemy *e = &g_battle.enemies[slot];
+    e->moves = SENTRY_MOVES;
+    e->move_count = 2;
+    e->artifact = 1;             /* ArtifactPower(1) */
+    e->last_move = 255;
+    e->last_before = 255;
+    choose_move(e);
+}
+
+/* SnakePlant.java: 75-79 HP, MalleablePower(3) on spawn. */
+static void setup_act2_snake_plant(int slot) {
+    add_enemy(slot, "蛇花", 75 + (int)(battle_rand() % 5));
+    Enemy *e = &g_battle.enemies[slot];
+    e->moves = SNAKE_PLANT_MOVES;
+    e->move_count = 2;
+    e->malleable = 3;
+    e->malleable_amt = 3;
+    e->last_move = 255;
+    e->last_before = 255;
+    choose_move(e);
+}
+
+/* Snecko.java: 114-120 HP, Glare on its first turn. */
+static void setup_act2_snecko(int slot) {
+    add_enemy(slot, "异蛇", 114 + (int)(battle_rand() % 7));
+    Enemy *e = &g_battle.enemies[slot];
+    e->moves = SNECKO_MOVES;
+    e->move_count = 3;
+    e->last_move = 255;
+    e->last_before = 255;
+    choose_move(e);              /* first turn: Glare */
+}
+
+/* Centurion.java: 76-80 HP. */
+static void setup_act2_centurion(int slot) {
+    add_enemy(slot, "百夫长", 76 + (int)(battle_rand() % 5));
+    Enemy *e = &g_battle.enemies[slot];
+    e->art = "坦克";              /* the game's own tank skeleton */
+    e->moves = CENTURION_MOVES;
+    e->move_count = 3;
+    e->last_move = 255;
+    e->last_before = 255;
+    choose_move(e);
+}
+
+/* Healer.java: 48-56 HP. */
+static void setup_act2_healer(int slot) {
+    add_enemy(slot, "神秘术士", 48 + (int)(battle_rand() % 9));
+    Enemy *e = &g_battle.enemies[slot];
+    e->art = "牧师";              /* the game's own healer skeleton */
+    e->moves = HEALER_MOVES;
+    e->move_count = 3;
+    e->last_move = 255;
+    e->last_before = 255;
+    choose_move(e);
+}
+
 static void setup_act2_byrds(int count) {
     for (int i = 0; i < count; i++) setup_act2_byrd(i);
     g_battle.enemy_count = count;
+}
+
+/* MonsterHelper "Sentry and Sphere": the Sentry sits on the left, which makes
+ * it the even slot and gives it Bolt first. */
+static void setup_act2_sentry_and_sphere(void) {
+    g_battle.enemy_count = 2;
+    setup_act2_sentry(0);
+    setup_act2_orb(1);
+}
+
+/* MonsterHelper "Centurion and Healer". */
+static void setup_act2_centurion_and_healer(void) {
+    g_battle.enemy_count = 2;
+    setup_act2_centurion(0);
+    setup_act2_healer(1);
 }
 
 /* MonsterHelper "2 Thieves": a Looter and a Mugger side by side. */
@@ -1289,9 +1458,18 @@ static void setup_act2_monster(int which) {
         for (int i = 0; i < 3; i++) setup_act1_cultist(i);
         return;
     }
-    g_battle.enemy_count = 2;
-    setup_act2_parasite(0);
-    setup_act1_fungi(1);
+    if (which == 10) {
+        g_battle.enemy_count = 2;
+        setup_act2_parasite(0);
+        setup_act1_fungi(1);
+        return;
+    }
+    if (which == 11) { setup_act2_sentry_and_sphere(); return; }
+    if (which == 12) { setup_act2_snake_plant(0); return; }
+    if (which == 13) { setup_act2_snecko(0); return; }
+    if (which == 14) { setup_act2_centurion_and_healer(); return; }
+    /* Anything else falls back to the two Byrds. */
+    setup_act2_byrds(2);
 }
 
 /* The three Slavers, left to right: blue, taskmaster, red. */
@@ -1893,9 +2071,8 @@ static void setup_act1_pool_encounter(int n) {
     }
 }
 
-/* The city's pools (MonsterHelper.java:857-869).  Four strong line-ups still
- * need monsters the port does not have yet -- Sentry and Sphere, Snake Plant,
- * Snecko, Centurion and Healer -- and join the list as those land. */
+/* The city's pools (MonsterHelper.java:857-869): five weak line-ups and eight
+ * strong ones, all of them real now. */
 enum {
     ENC2_CHOSEN,
     ENC2_PARASITE,
@@ -1906,6 +2083,10 @@ enum {
     ENC2_CULTIST_AND_CHOSEN,
     ENC2_THREE_CULTISTS,
     ENC2_PARASITE_AND_FUNGI,
+    ENC2_SENTRY_AND_SPHERE,
+    ENC2_SNAKE_PLANT,
+    ENC2_SNECKO,
+    ENC2_CENTURION_AND_HEALER,
 };
 
 static const unsigned char WEAK2_POOL[] = {
@@ -1913,11 +2094,12 @@ static const unsigned char WEAK2_POOL[] = {
 };
 static const unsigned char STRONG2_POOL[] = {
     ENC2_CHOSEN_AND_BYRDS, ENC2_CULTIST_AND_CHOSEN, ENC2_THREE_CULTISTS,
-    ENC2_PARASITE_AND_FUNGI,
+    ENC2_PARASITE_AND_FUNGI, ENC2_SENTRY_AND_SPHERE, ENC2_SNAKE_PLANT,
+    ENC2_SNECKO, ENC2_CENTURION_AND_HEALER,
 };
 
 #define WEAK2_POOL_COUNT 5
-#define STRONG2_POOL_COUNT 4
+#define STRONG2_POOL_COUNT 8
 
 int battle_test_encounter_id_act2(int n) {
     return pool_encounter_id(n, WEAK2_POOL, WEAK2_POOL_COUNT,
@@ -1963,6 +2145,20 @@ static void setup_act2_pool_encounter(int n) {
         g_battle.enemy_count = 2;
         setup_act2_parasite(0);
         setup_act1_fungi(1);
+        break;
+    case ENC2_SENTRY_AND_SPHERE:
+        setup_act2_sentry_and_sphere();
+        break;
+    case ENC2_SNAKE_PLANT:
+        g_battle.enemy_count = 1;
+        setup_act2_snake_plant(0);
+        break;
+    case ENC2_SNECKO:
+        g_battle.enemy_count = 1;
+        setup_act2_snecko(0);
+        break;
+    case ENC2_CENTURION_AND_HEALER:
+        setup_act2_centurion_and_healer();
         break;
     default:
         g_battle.enemy_count = 1;
@@ -2256,9 +2452,19 @@ static int damage_enemy_typed(int index, int amount, int thorns) {
         e->curl_done = 1;
         e->curl_up = 0;
     }
+    /* MalleablePower.onAttacked: every normal hit that does not kill stacks
+     * more block for the rest of the player's turn. */
+    int malleable = 0;
+    if (!thorns && e->malleable > 0 && lost > 0 && lost < e->hp) {
+        malleable = e->malleable_amt;
+    }
     e->hp -= lost;
     if (e->hp < 0) e->hp = 0;
     if (curl > 0) e->block += curl;
+    if (malleable > 0) {
+        e->block += malleable;
+        if (e->malleable_amt < 250) e->malleable_amt++;
+    }
     if (lost > 0) audio_sfx(AUDIO_SFX_HIT);
     if (e->hp <= 0) on_enemy_death(index);
     if (lost > 0 && e->hp > 0) {
@@ -2578,6 +2784,12 @@ static void on_card_drawn(int entry) {
     int type = sts_cards[index].type;
     if (pw(POW_FIRE_BREATHING) && (type == 3 || type == 4)) hit_all(pw(POW_FIRE_BREATHING));
     if (pw(POW_EVOLVE) && type == 3) draw_cards(pw(POW_EVOLVE));
+    if (g_battle.confused) {
+        /* ConfusionPower.onCardDraw: every card with a real cost rolls 0..3 and
+         * keeps that cost (cardRandomRng.random(3) is inclusive in libGDX). */
+        int cost = CARD_UPGRADED(entry) ? sts_cards[index].cost_up : sts_cards[index].cost;
+        if (cost >= 0) g_battle.confused_cost[index] = (unsigned char)(1 + (int)(rnd() % 4));
+    }
     if (strcmp(sts_cards[index].id, "Void") == 0 && g_battle.energy > 0) {
         g_battle.energy -= 1;      /* Void: when drawn, lose 1 Energy */
     }
@@ -3773,6 +3985,10 @@ static void enemy_take_turn(int i) {
     if (e->hp <= 0) return;
     /* BarricadePower keeps the block; otherwise it is gone at turn start. */
     if (!e->barricade) e->block = 0;
+    /* MalleablePower.atEndOfTurn(false) puts the per-hit block gain back to its
+     * base once the monster's turn is over.  Resetting at the top of the next
+     * turn is the same thing, because nothing hits it in between. */
+    if (e->malleable > 0) e->malleable_amt = e->malleable;
     /* FlightPower.atStartOfTurn restores the stored stacks while airborne. */
     if (e->flight_max > 0 && !e->grounded) e->flight = e->flight_max;
     /* PlatedArmorPower and MetallicizePower both sit in
@@ -3889,11 +4105,15 @@ static void enemy_take_turn(int i) {
             break;
         case MOVE_PROTECT: {
             /* GremlinTsundere Protect: 7 block to a random other monster; if
-             * there is none, it protects itself. */
-            int candidates[4];
+             * there is none, it protects itself.  Centurion.getMove's Protect
+             * has no such restriction (the block can land on itself), which
+             * the move table marks with value2. */
+            int candidates[5];
             int n = 0;
             for (int j = 0; j < g_battle.enemy_count; j++) {
-                if (j != i && g_battle.enemies[j].hp > 0) candidates[n++] = j;
+                if (g_battle.enemies[j].hp > 0 && (j != i || move->value2)) {
+                    candidates[n++] = j;
+                }
             }
             int who = n > 0 ? candidates[rnd() % (unsigned int)n] : i;
             g_battle.enemies[who].block += move->value;
@@ -4043,6 +4263,44 @@ static void enemy_take_turn(int i) {
             e->stolen_gold = 0;
             e->block = 0;
             custom_roll = 1;
+            break;
+        case MOVE_DAZED: {
+            /* Sentry Bolt: MakeTempCardInDiscardAction(Dazed, dazedAmt). */
+            int dazed = battle_find_card("Dazed");
+            for (int k = 0; k < move->value && dazed >= 0; k++) {
+                if (g_battle.discard_count < 64) {
+                    g_battle.discard[g_battle.discard_count++] = CARD_ENTRY(dazed, 0);
+                }
+            }
+            break;
+        }
+        case MOVE_SPORES:
+            /* SnakePlant Spores: Frail 2, then Weak 2. */
+            player_gain_frail(move->value2);
+            player_gain_weak(move->value);
+            break;
+        case MOVE_GLARE:
+            /* Snecko Glare: ConfusionPower(owner = player). */
+            g_battle.confused = 1;
+            break;
+        case MOVE_HEAL_ALL: {
+            /* Healer Heal: every living monster, itself included, heals 16. */
+            int healed = 0;
+            for (int j = 0; j < g_battle.enemy_count; j++) {
+                Enemy *o = &g_battle.enemies[j];
+                if (o->hp <= 0 || o->hp >= o->max_hp) continue;
+                o->hp += move->value;
+                if (o->hp > o->max_hp) o->hp = o->max_hp;
+                healed = 1;
+            }
+            if (healed) audio_sfx(AUDIO_SFX_HEAL);
+            break;
+        }
+        case MOVE_BUFF_ALL:
+            /* Healer Buff: +2 Strength to every living monster, itself too. */
+            for (int j = 0; j < g_battle.enemy_count; j++) {
+                if (g_battle.enemies[j].hp > 0) g_battle.enemies[j].strength += move->value;
+            }
             break;
         default:
             break;

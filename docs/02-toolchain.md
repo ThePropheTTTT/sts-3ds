@@ -155,7 +155,7 @@ Azahar 的 `GRenderWindow::mousePressEvent` 会直接忽略 `Qt::MouseEventSynth
 
 为了在 CI 式截图里仍然覆盖这条路径，`CARD_TEST=1` 构建保留了合成触摸入口（仅测试构建编译，出货包不含）：
 
-- 报告屏按 `B` 循环全部战斗/选牌演示（Automaton → Collector → Gremlin Leader → 第 3 幕背景 → 第 1 幕 Boss 与普通怪（含邪教徒、两只/三只虱虫、Small Slimes 组合、尖刺/酸液小史莱姆与尖刺中史莱姆单只、两只真菌怪与单只真菌怪、地精团、大酸液/大尖刺史莱姆、掠夺者、蓝/红奴隶贩子单只、Exordium Thugs、Exordium Wildlife、五只小史莱姆的 Lots of Slimes，以及第 2 幕城市阵容：打劫的、三只异鸟、双盗贼、天选者+异鸟、邪教徒+天选者、三只邪教徒、寄生兽+真菌怪）→ 剩余 Power 卡 → Purity / Forethought 选牌），`SELECT` 从演示回到报告；
+- 报告屏按 `B` 循环全部战斗/选牌演示（Automaton → Collector → Gremlin Leader → 第 3 幕背景 → 第 1 幕 Boss 与普通怪（含邪教徒、两只/三只虱虫、Small Slimes 组合、尖刺/酸液小史莱姆与尖刺中史莱姆单只、两只真菌怪与单只真菌怪、地精团、大酸液/大尖刺史莱姆、掠夺者、蓝/红奴隶贩子单只、Exordium Thugs、Exordium Wildlife、五只小史莱姆的 Lots of Slimes，以及第 2 幕城市阵容：打劫的、三只异鸟、双盗贼、天选者+异鸟、邪教徒+天选者、三只邪教徒、寄生兽+真菌怪、哨卫+球体守卫、蛇花、异蛇、百夫长+神秘术士）→ 剩余 Power 卡 → Purity / Forethought 选牌），`SELECT` 从演示回到报告；
 - 战斗屏按 `X` 从第三张牌开始拖动并把目标切到 0 号敌人槽，按 `Y` 在该目标上松手出牌，按 `B` 把手牌放回扇形取消。
 
 需要给奖励、篝火、升级这三个屏截图时，用同一套构建加 `UI_DEMO`（0 升级、1 奖励、2 篝火、3 True Grit+ 选牌、4 Searing Blow 升级屏、5 五张升级文本卡：Ghostly+/Forethought+/Searing+2/Discovery+/Burn+），启动后直接停在对应画面；标题屏用出货构建截：

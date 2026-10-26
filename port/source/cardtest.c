@@ -2880,10 +2880,11 @@ void card_test_demo_fight(int which) {
      * 32 SpikeSlime (L), 33 the Looter, 34 Blue Slaver, 35 Red Slaver, 36
      * Exordium Thugs, 37 Exordium Wildlife, 38 Lots of Slimes, 39 the Mugger,
      * 40 three Byrds, 41 two Thieves, 42 Chosen and Byrds, 43 Cultist and
-     * Chosen, 44 three Cultists, 45 Shelled Parasite and Fungi.
+     * Chosen, 44 three Cultists, 45 Shelled Parasite and Fungi, 46 Sentry and
+     * Sphere, 47 Snake Plant, 48 Snecko, 49 Centurion and Healer.
      * Same spawn path the real encounter uses, then a hand so the bottom
      * screen has cards to draw. */
-    if (which < 0 || which > 45) which = 0;
+    if (which < 0 || which > 49) which = 0;
     if (which == 10) battle_test_spawn_act2(1);
     else if (which == 11) battle_test_spawn_act1(0);
     else if (which == 12) battle_test_spawn_act1(1);
@@ -2913,6 +2914,9 @@ void card_test_demo_fight(int which) {
     else if (which == 37) battle_test_spawn_act1(22);  /* Exordium Wildlife */
     else if (which == 38) battle_test_spawn_act1(23);  /* Lots of Slimes */
     else if (which >= 39 && which <= 45) {             /* the act 2 line-ups */
+        battle_test_spawn_act2_monster(which - 35);
+    }
+    else if (which >= 46 && which <= 49) {             /* the newer city line-ups */
         battle_test_spawn_act2_monster(which - 35);
     }
     else if (which == 6) battle_test_spawn_slavers();
@@ -3962,20 +3966,19 @@ static void test_lots_of_slimes(void) {
 
 static void test_act2_pool(void) {
     /* The city's weak pool holds five single-monster line-ups and the strong
-     * pool the four multi-monster ones the port already knows.  The first
-     * three monster rooms of act 2 come from the weak pool, the rest from the
-     * strong one (MonsterHelper.java:857-869, AbstractDungeon's three-fight
-     * rule). */
+     * pool the eight multi-monster ones.  The first three monster rooms of
+     * act 2 come from the weak pool, the rest from the strong one
+     * (MonsterHelper.java:857-869, AbstractDungeon's three-fight rule). */
     int weak_ok = 1, strong_ok = 1, stable = 1;
-    int seen[9] = {0};
-    for (int n = 0; n < 12; n++) {
+    int seen[13] = {0};
+    for (int n = 0; n < 16; n++) {
         int id = battle_test_encounter_id_act2(n);
         if (n < 3) {
             if (id < 0 || id > 4) weak_ok = 0;
-        } else if (id < 5 || id > 8) {
+        } else if (id < 5 || id > 12) {
             strong_ok = 0;
         }
-        if (id >= 0 && id < 9) seen[id]++;
+        if (id >= 0 && id < 13) seen[id]++;
         if (battle_test_encounter_id_act2(n) != id) stable = 0;
     }
     check("act 2 weak pool in range", weak_ok, 1);
@@ -3983,7 +3986,7 @@ static void test_act2_pool(void) {
     check("act 2 pick is stable", stable, 1);
     int weak_seen = 0, strong_seen = 0;
     for (int i = 0; i < 5; i++) if (seen[i] > 0) weak_seen++;
-    for (int i = 5; i < 9; i++) if (seen[i] > 0) strong_seen++;
+    for (int i = 5; i < 13; i++) if (seen[i] > 0) strong_seen++;
     check("act 2 pool varies", weak_seen + strong_seen >= 2, 1);
 
     /* Whatever the shuffle picks, every city pool slot spawns a live
@@ -4112,6 +4115,197 @@ static void test_act2_pool(void) {
     check("parasite and fungi demo count", g_battle.enemy_count, 2);
 }
 
+/* The four city line-ups that complete the STRONG pool: Sentry and Sphere,
+ * Snake Plant, Snecko, Centurion and Healer (Sentry.java, SnakePlant.java,
+ * Snecko.java, Centurion.java, Healer.java). */
+static void test_city_monsters(void) {
+    /* Sentry and Sphere: the Sentry on the left sits in the even slot, so its
+     * first move is Bolt (two Dazed into the discard pile), then Beam 9 and
+     * Bolt alternate.  Artifact 1 comes from ArtifactPower. */
+    battle_test_spawn_act2_monster(11);
+    Enemy *sentry = &g_battle.enemies[0];
+    check("city sentry count", g_battle.enemy_count, 2);
+    check("city sentry names", strcmp(sentry->name, "哨卫") == 0 &&
+          strcmp(g_battle.enemies[1].name, "球体守卫") == 0, 1);
+    check("city sentry hp", sentry->max_hp >= 38 && sentry->max_hp <= 42, 1);
+    check("city sentry artifact", sentry->artifact, 1);
+    check("city sentry opens with bolt", sentry->moves[sentry->move_index].kind, MOVE_DAZED);
+    check("city sentry bolt count", sentry->moves[sentry->move_index].value, 2);
+    g_battle.discard_count = 0;
+    int hp0 = g_battle.hp;
+    battle_test_enemy_turn(0);
+    check("city sentry bolt harmless", g_battle.hp, hp0);
+    check("city sentry bolt dazes",
+          count_card(g_battle.discard, g_battle.discard_count, "Dazed"), 2);
+    check("city sentry beams next", sentry->moves[sentry->move_index].kind, MOVE_ATTACK);
+    check("city sentry beam damage", sentry->moves[sentry->move_index].value, 9);
+    battle_test_enemy_turn(0);
+    check("city sentry beam hits", g_battle.hp, hp0 - 9);
+    check("city sentry bolts again", sentry->moves[sentry->move_index].kind, MOVE_DAZED);
+
+    /* Snake Plant: Chomp is three bites of 7; Malleable 3 grows by one block
+     * every normal hit and resets on its own turn; Spores is Frail 2 + Weak 2
+     * and never runs twice in a row. */
+    battle_test_spawn_act2_monster(12);
+    Enemy *snake = &g_battle.enemies[0];
+    check("city snake name", strcmp(snake->name, "蛇花"), 0);
+    check("city snake hp", snake->max_hp >= 75 && snake->max_hp <= 79, 1);
+    check("city snake malleable", snake->malleable, 3);
+    check("city snake amt", snake->malleable_amt, 3);
+    battle_test_choose_roll(0, 0);
+    check("city snake chomp intent", snake->moves[snake->move_index].kind, MOVE_MULTI);
+    check("city snake chomp damage", snake->moves[snake->move_index].value, 7);
+    check("city snake chomp hits", snake->moves[snake->move_index].value2, 3);
+    int snake_hp = snake->hp;
+    hp0 = g_battle.hp;
+    battle_test_enemy_turn(0);
+    check("city snake chomps", g_battle.hp, hp0 - 21);
+    battle_test_damage_enemy(0, 5);
+    check("city snake malleable blocks", snake->block, 3);
+    check("city snake malleable grows", snake->malleable_amt, 4);
+    check("city snake takes it", snake->hp, snake_hp - 5);
+    battle_test_damage_enemy(0, 5);
+    check("city snake malleable stacks", snake->block, 4);
+    check("city snake malleable grows again", snake->malleable_amt, 5);
+    battle_test_choose_roll(0, 0);
+    check("city snake chomps again", snake->moves[snake->move_index].kind, MOVE_MULTI);
+    battle_test_enemy_turn(0);
+    check("city snake second chomp", g_battle.hp, hp0 - 42);
+    check("city snake resets malleable", snake->malleable_amt, 3);
+    battle_test_choose_roll(0, 0);
+    check("city snake spores", snake->moves[snake->move_index].kind, MOVE_SPORES);
+    check("city snake spores values", snake->moves[snake->move_index].value == 2 &&
+          snake->moves[snake->move_index].value2 == 2, 1);
+    hp0 = g_battle.hp;
+    battle_test_enemy_turn(0);
+    check("city snake spores harmless", g_battle.hp, hp0);
+    check("city snake frails", g_battle.frail, 2);
+    check("city snake weakens", g_battle.weak, 2);
+
+    /* Snecko: Glare first (ConfusionPower, no damage), then Tail 8 + Vulnerable
+     * 2 or Bite 15.  Every card drawn under Confusion gets a random cost 0..3
+     * that sticks to it for the combat. */
+    battle_test_spawn_act2_monster(13);
+    Enemy *snecko = &g_battle.enemies[0];
+    check("city snecko name", strcmp(snecko->name, "异蛇"), 0);
+    check("city snecko hp", snecko->max_hp >= 114 && snecko->max_hp <= 120, 1);
+    check("city snecko opens with glare", snecko->moves[snecko->move_index].kind, MOVE_GLARE);
+    hp0 = g_battle.hp;
+    battle_test_enemy_turn(0);
+    check("city snecko glare harmless", g_battle.hp, hp0);
+    check("city snecko confuses", g_battle.confused, 1);
+    battle_test_choose_roll(0, 0);
+    check("city snecko tail intent", snecko->moves[snecko->move_index].kind, MOVE_ATTACK_DEBUFF);
+    check("city snecko tail damage", snecko->moves[snecko->move_index].value, 8);
+    check("city snecko tail vulnerable", snecko->moves[snecko->move_index].value2, 2);
+    battle_test_enemy_turn(0);
+    check("city snecko tail hits", g_battle.hp, hp0 - 8);
+    check("city snecko tail vulnerables", g_battle.vulnerable, 2);
+    int city_strike = battle_find_card("Strike_R");
+    int city_defend = battle_find_card("Defend_R");
+    int city_bash = battle_find_card("Bash");
+    int city_pommel = battle_find_card("Pommel Strike");
+    g_battle.hand_count = 0;
+    g_battle.draw_count = 4;
+    g_battle.draw[0] = CARD_ENTRY(city_strike, 0);
+    g_battle.draw[1] = CARD_ENTRY(city_defend, 0);
+    g_battle.draw[2] = CARD_ENTRY(city_bash, 0);
+    g_battle.draw[3] = CARD_ENTRY(city_pommel, 0);
+    battle_draw_for_test(4);
+    check("city snecko draws four", g_battle.hand_count, 4);
+    int city_costs[4];
+    int city_in_range = 1;
+    for (int i = 0; i < 4; i++) {
+        city_costs[i] = battle_card_cost(i);
+        if (city_costs[i] < 0 || city_costs[i] > 3) city_in_range = 0;
+    }
+    check("city snecko costs 0..3", city_in_range, 1);
+    check("city snecko costs stick", battle_card_cost(0) == city_costs[0] &&
+          battle_card_cost(1) == city_costs[1] && battle_card_cost(2) == city_costs[2] &&
+          battle_card_cost(3) == city_costs[3], 1);
+
+    /* Centurion: Protect 15 block lands on a random living monster, itself
+     * included; in a duel it uses Fury (6 x3) instead; Slash is 12. */
+    battle_test_spawn_act2_monster(14);
+    Enemy *centurion = &g_battle.enemies[0];
+    Enemy *healer = &g_battle.enemies[1];
+    check("city centurion names", strcmp(centurion->name, "百夫长") == 0 &&
+          strcmp(healer->name, "神秘术士") == 0, 1);
+    check("city centurion hp", centurion->max_hp >= 76 && centurion->max_hp <= 80, 1);
+    check("city healer hp", healer->max_hp >= 48 && healer->max_hp <= 56, 1);
+    check("city centurion art", strcmp(centurion->art, "坦克") == 0 &&
+          strcmp(healer->art, "牧师") == 0, 1);
+    battle_test_choose_roll(0, 99);
+    check("city centurion protects", centurion->moves[centurion->move_index].kind, MOVE_PROTECT);
+    check("city centurion protect block", centurion->moves[centurion->move_index].value, 15);
+    battle_test_enemy_turn(0);
+    check("city centurion protect total", centurion->block + healer->block, 15);
+    check("city centurion protect one target",
+          (centurion->block == 15) != (healer->block == 15), 1);
+
+    battle_test_spawn_act2_monster(14);
+    centurion = &g_battle.enemies[0];
+    healer = &g_battle.enemies[1];
+    battle_test_damage_enemy(1, 999);
+    check("city healer dead", healer->hp, 0);
+    battle_test_choose_roll(0, 99);
+    check("city centurion duels with fury",
+          centurion->moves[centurion->move_index].kind, MOVE_MULTI);
+    check("city centurion fury damage", centurion->moves[centurion->move_index].value, 6);
+    check("city centurion fury hits", centurion->moves[centurion->move_index].value2, 3);
+    hp0 = g_battle.hp;
+    battle_test_enemy_turn(0);
+    check("city centurion fury lands", g_battle.hp, hp0 - 18);
+
+    battle_test_spawn_act2_monster(14);
+    centurion = &g_battle.enemies[0];
+    battle_test_choose_roll(0, 0);
+    check("city centurion slashes", centurion->moves[centurion->move_index].kind, MOVE_ATTACK);
+    check("city centurion slash damage", centurion->moves[centurion->move_index].value, 12);
+    hp0 = g_battle.hp;
+    battle_test_enemy_turn(0);
+    check("city centurion slash lands", g_battle.hp, hp0 - 12);
+
+    /* Healer: Attack 8 + Frail 2, Buff +2 Strength to every monster, Heal 16
+     * once the room is missing more than 15 HP. */
+    battle_test_spawn_act2_monster(14);
+    centurion = &g_battle.enemies[0];
+    healer = &g_battle.enemies[1];
+    battle_test_choose_roll(1, 99);
+    check("city healer attacks", healer->moves[healer->move_index].kind, MOVE_ATTACK_DEBUFF);
+    check("city healer attack damage", healer->moves[healer->move_index].value, 8);
+    check("city healer attack frail", healer->moves[healer->move_index].value3, 2);
+    hp0 = g_battle.hp;
+    battle_test_enemy_turn(1);
+    check("city healer attack lands", g_battle.hp, hp0 - 8);
+    check("city healer attack frails", g_battle.frail, 2);
+    battle_test_choose_roll(1, 0);
+    check("city healer buffs", healer->moves[healer->move_index].kind, MOVE_BUFF_ALL);
+    battle_test_enemy_turn(1);
+    check("city healer buffs everyone", centurion->strength == 2 && healer->strength == 2, 1);
+    battle_test_damage_enemy(1, 20);
+    int healer_hurt = healer->hp;
+    battle_test_choose_roll(1, 0);
+    check("city healer heals the hurt room",
+          healer->moves[healer->move_index].kind, MOVE_HEAL_ALL);
+    check("city healer heal amount", healer->moves[healer->move_index].value, 16);
+    battle_test_enemy_turn(1);
+    int healer_cap = healer_hurt + 16 > healer->max_hp ? healer->max_hp : healer_hurt + 16;
+    check("city healer heals", healer->hp, healer_cap);
+
+    /* The report screen's new city demos. */
+    card_test_demo_fight(46);
+    check("city sentry demo count", g_battle.enemy_count, 2);
+    check("city sentry demo name", strcmp(g_battle.enemies[0].name, "哨卫"), 0);
+    card_test_demo_fight(47);
+    check("city snake demo name", strcmp(g_battle.enemies[0].name, "蛇花"), 0);
+    card_test_demo_fight(48);
+    check("city snecko demo name", strcmp(g_battle.enemies[0].name, "异蛇"), 0);
+    card_test_demo_fight(49);
+    check("city centurion demo count", g_battle.enemy_count, 2);
+    check("city centurion demo name", strcmp(g_battle.enemies[0].name, "百夫长"), 0);
+}
+
 void card_test_run(void) {
     s_cases = 0;
     s_fails = 0;
@@ -4146,6 +4340,7 @@ void card_test_run(void) {
     test_encounter_pool();
     test_lots_of_slimes();
     test_act2_pool();
+    test_city_monsters();
     g_run.screen = SCREEN_MAP;
     audio_sfx_mute(0);
 }
