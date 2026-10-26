@@ -134,6 +134,7 @@ static Tex3DS_SubTexture s_hud_energy_dim[5];
 static Tex3DS_SubTexture s_hud_end[STS_HUD_END_COUNT];
 static Tex3DS_SubTexture s_hud_camp[STS_HUD_CAMP_COUNT];
 static Tex3DS_SubTexture s_hud_vfx;
+static Tex3DS_SubTexture s_hud_logo;
 static float s_orb_angle[5];
 static float s_hud_dt = 1.0f / 60.0f;
 static u64 s_hud_tick;
@@ -589,6 +590,7 @@ static void load_art(void) {
         for (int i = 0; i < STS_HUD_END_COUNT; i++) set_sub_hud(&s_hud_end[i], &sts_hud_end[i]);
         for (int i = 0; i < STS_HUD_CAMP_COUNT; i++) set_sub_hud(&s_hud_camp[i], &sts_hud_camp[i]);
         set_sub_hud(&s_hud_vfx, &sts_hud_vfx);
+        set_sub_hud(&s_hud_logo, &sts_hud_title_logo);
     }
 
     for (int i = 0; i < STS_CARD_COUNT; i++) {
@@ -3179,18 +3181,26 @@ static void diag_boot_checks(void) {
 static void draw_title_top(void) {
     draw_background();
     rect_fill(0, 0, TOP_W, TOP_H, RGBA(6, 6, 8, 150), 0.2f);
-    text_draw(FS_BIG, "杀戮尖塔", 128, 64, COL_GOLD);
-    text_draw(FS_MID, "3DS", 178, 102, COL_INK);
+    if (s_hud_tex) {
+        /* The game's own 900x320 logo, 320 px wide: the whole screen is 400. */
+        C2D_Image logo = hud_image(&s_hud_logo);
+        const float k = 320.0f / 720.0f;
+        C2D_DrawImageAt(logo, 40.0f, 22.0f, 0.3f, NULL, k, k);
+        text_draw(FS_MID, "3DS", 178, 142, COL_INK);
+    } else {
+        text_draw(FS_BIG, "尖塔奇兵", 128, 64, COL_GOLD);
+        text_draw(FS_MID, "3DS", 178, 102, COL_INK);
+    }
     if (s_title_has_save)
-        text_draw(FS_SMALL, "存档已找到", 160, 158, COL_DIM);
+        text_draw(FS_SMALL, "存档已找到", 160, 168, COL_DIM);
     else
-        text_draw(FS_SMALL, "没有存档", 164, 158, COL_DIM);
+        text_draw(FS_SMALL, "没有存档", 164, 168, COL_DIM);
     text_draw(FS_SMALL, "非官方同人移植 · 仅供学习", 106, 214, RGB(150, 142, 126));
 }
 
 static void draw_title_bottom(void) {
     rect_fill(0, 0, BOT_W, BOT_H, RGB(18, 17, 15), 0.0f);
-    text_draw(FS_MID, "杀戮尖塔 · 3DS", 92, 46, COL_GOLD);
+    text_draw(FS_MID, "尖塔奇兵 · 3DS", 92, 46, COL_GOLD);
     text_draw(FS_SMALL, "选择一项开始", 116, 74, COL_DIM);
 
     int count = s_title_has_save ? 2 : 1;

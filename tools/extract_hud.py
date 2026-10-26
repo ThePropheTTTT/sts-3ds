@@ -11,6 +11,8 @@ The pieces are the game's own images:
   orb's value changes.
 * images/ui/campfire/sleep.png, smith.png, outline.png and buttonShadow.png --
   AbstractCampfireOption's button art, focus outline and shadow.
+* images/ui/title_logo/zhs.png -- the game's own Chinese title art, shrunk to
+  fit the free band under the campfire buttons.
 
     python tools/extract_hud.py  -> assets/hud.png, port/source/hud_gen.h
 """
@@ -41,6 +43,10 @@ ENERGY_DIM_BOX = [(i * ORB, ORB, ORB, ORB) for i in range(5)]
 END_BOX = [(i * BUTTON, 256, BUTTON, BUTTON) for i in range(3)]
 VFX_BOX = (768, 256, BUTTON, BUTTON)
 CAMP_BOX = [(i * BUTTON, 512, BUTTON, BUTTON) for i in range(4)]
+# 900x320 scaled to 720x256: same 2.8125 aspect, and the band 768..1023 is the
+# only stretch of the page still free.  The port draws it 320 px wide, so the
+# extra resolution is just headroom.
+TITLE_BOX = (0, 768, 720, 256)
 
 END_NAMES = ["endTurnButton.png", "endTurnButtonGlow.png", "endTurnHover.png"]
 CAMP_NAMES = ["sleep.png", "smith.png", "outline.png", "buttonShadow.png"]
@@ -98,6 +104,11 @@ def main(argv=None) -> int:
         page.alpha_composite(im.resize((w, h), Image.LANCZOS), (x, y))
         print(f"campfire {name:18s} {im.width}x{im.height} -> {x},{y}")
 
+    logo = jar.image("images/ui/title_logo/zhs.png").convert("RGBA")
+    page.alpha_composite(logo.resize((TITLE_BOX[2], TITLE_BOX[3]), Image.LANCZOS),
+                         TITLE_BOX[:2])
+    print(f"title logo              {logo.width}x{logo.height} -> {TITLE_BOX[0]},{TITLE_BOX[1]}")
+
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     page.save(args.out)
     print(f"-> {args.out} ({page.width}x{page.height})")
@@ -131,6 +142,9 @@ def main(argv=None) -> int:
     header.append("")
     header.append("/* EnergyPanel's two-second flash. */")
     header.append("static const StsHudRect sts_hud_vfx = {%d, %d, %d, %d};" % VFX_BOX)
+    header.append("")
+    header.append("/* Title screen: the game's Chinese logo. */")
+    header.append("static const StsHudRect sts_hud_title_logo = {%d, %d, %d, %d};" % TITLE_BOX)
     header.append("")
     header.append("/* AbstractCampfireOption: sleep, smith, focus outline, shadow. */")
     header.append("enum { STS_HUD_CAMP_SLEEP = 0, STS_HUD_CAMP_SMITH, STS_HUD_CAMP_OUTLINE,")
