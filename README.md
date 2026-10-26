@@ -4,6 +4,10 @@
 
 本项目自己写的代码以 [MIT 许可证](LICENSE) 发布；《杀戮尖塔》的游戏资源、文本与商标不在该许可范围内，详见 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
+## 路线图
+
+项目现状、剩余工作与交接说明见 [总路线图](docs/00-roadmap.md)。
+
 ## 构建
 
 本仓库不包含生成资源与 `port/source/*_gen.h`。先按 [数据管线](docs/01-data-pipeline.md) 从自购游戏副本生成，再按 [工具链](docs/02-toolchain.md) 配置 devkitPro，最后运行 `bash port/build.sh`。
