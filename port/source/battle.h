@@ -192,6 +192,9 @@ typedef struct {
     int entangled;       /* EntanglePower: Attack cards are locked until turn end */
     int artifact;        /* ArtifactPower: negates one debuff per stack */
     int intangible;      /* IntangiblePlayerPower: all damage taken is 1 */
+    int dexterity;       /* DexterityPower: extra block on card block */
+    int regen;           /* RegenPower: heals at the end of your turn, then drops */
+    int thorns;          /* ThornsPower: attackers take this much damage */
 
     int draw[64];
     int draw_count;
@@ -302,6 +305,8 @@ int battle_roll_rarity(int base_rare, int base_uncommon);
 int battle_relic_tier(int id);
 int battle_relic_price(int id);
 int battle_potion_price(int id);
+/* AbstractPotion.getRarity: 0 common, 1 uncommon, 2 rare. */
+int battle_potion_rarity(int id);
 
 void battle_choose_reward(int index);
 void battle_skip_reward(void);
@@ -369,7 +374,13 @@ int battle_test_entry_ethereal(int entry);
 void battle_test_apply_innate(void);
 #endif
 
-enum { POTION_HEAL = 0, POTION_FIRE, POTION_BLOCK, POTION_DRAW, POTION_ENERGY, POTION_STR, POTION_COUNT };
+enum {
+    POTION_HEAL = 0, POTION_FIRE, POTION_BLOCK, POTION_DRAW, POTION_ENERGY,
+    POTION_STR,
+    /* The ids above are in save files, so new potions always go at the end. */
+    POTION_EXPLOSIVE, POTION_FEAR, POTION_WEAK, POTION_ANCIENT, POTION_BRONZE,
+    POTION_DEX, POTION_REGEN, POTION_FORGE, POTION_FRUIT, POTION_COUNT
+};
 int battle_potion_count(void);
 int battle_potion_at(int slot);
 const char *battle_potion_name(int id);

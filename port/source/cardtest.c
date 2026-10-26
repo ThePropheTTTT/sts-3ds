@@ -4306,6 +4306,141 @@ static void test_city_monsters(void) {
     check("city centurion demo name", strcmp(g_battle.enemies[0].name, "百夫长"), 0);
 }
 
+/* ---- potions ------------------------------------------------------------ */
+
+static void give_potion(int id) {
+    g_run.potion_count = 1;
+    g_run.potions[0] = (unsigned char)id;
+}
+
+static void test_potions(void) {
+    /* AbstractPotion.getRarity / getPrice, and the names from the game's own
+     * translation (localization/zhs/potions.json). */
+    check("potion explosive name", strcmp(battle_potion_name(POTION_EXPLOSIVE), "爆炸药水"), 0);
+    check("potion ancient name", strcmp(battle_potion_name(POTION_ANCIENT), "先古药水"), 0);
+    check("potion fruit name", strcmp(battle_potion_name(POTION_FRUIT), "果汁"), 0);
+    check("potion blood name", strcmp(battle_potion_name(POTION_HEAL), "鲜血药水"), 0);
+    check("potion regen desc", strcmp(battle_potion_desc(POTION_REGEN), "获得 5 层再生"), 0);
+    check("potion common rarity", battle_potion_rarity(POTION_FIRE), 0);
+    check("potion uncommon rarity", battle_potion_rarity(POTION_BRONZE), 1);
+    check("potion rare rarity", battle_potion_rarity(POTION_FRUIT), 2);
+    check("potion common price", battle_potion_price(POTION_FIRE), 50);
+    check("potion uncommon price", battle_potion_price(POTION_ANCIENT), 75);
+    check("potion rare price", battle_potion_price(POTION_FRUIT), 100);
+
+    /* Explosive Potion: DamageAllEnemiesAction(10). */
+    fresh(40);
+    g_battle.enemy_count = 2;
+    g_battle.enemies[1].name = "Dummy2";
+    g_battle.enemies[1].hp = 40;
+    g_battle.enemies[1].max_hp = 40;
+    give_potion(POTION_EXPLOSIVE);
+    check("explosive used", battle_use_potion(0, -1), 1);
+    check("explosive enemy0", g_battle.enemies[0].hp, 30);
+    check("explosive enemy1", g_battle.enemies[1].hp, 30);
+    check("explosive consumed", g_run.potion_count, 0);
+
+    /* Fear and Weak are targeted: no target refuses and keeps the potion. */
+    fresh(50);
+    give_potion(POTION_FEAR);
+    check("fear no target", battle_use_potion(0, -1), 0);
+    check("fear kept", g_run.potion_count, 1);
+    check("fear used", battle_use_potion(0, 0), 1);
+    check("fear vulnerable", g_battle.enemies[0].vulnerable, 3);
+    fresh(50);
+    give_potion(POTION_WEAK);
+    check("weak used", battle_use_potion(0, 0), 1);
+    check("weak stacks", g_battle.enemies[0].weak, 3);
+
+    /* Ancient Potion: one Artifact eats the Louse's Weak lick. */
+    battle_test_spawn_act1(8);        /* one red Louse */
+    give_potion(POTION_ANCIENT);
+    check("ancient used", battle_use_potion(0, -1), 1);
+    check("ancient artifact", g_battle.artifact, 1);
+    battle_test_choose_roll(0, 0);    /* 0 rolls into its Weak move */
+    check("ancient louse weak", g_battle.enemies[0].moves[g_battle.enemies[0].move_index].kind, MOVE_WEAK);
+    battle_test_enemy_turn(0);
+    check("artifact blocks weak", g_battle.weak, 0);
+    check("artifact spent", g_battle.artifact, 0);
+    battle_test_spawn_act1(8);
+    battle_test_choose_roll(0, 0);
+    battle_test_enemy_turn(0);
+    check("no artifact weak", g_battle.weak, 2);
+
+    /* Liquid Bronze: Thorns(3) bites the attacker for every hit. */
+    fresh(50);
+    g_battle.enemies[0].moves = HIT10;
+    g_battle.enemies[0].move_count = 1;
+    g_battle.enemies[0].move_index = 0;
+    give_potion(POTION_BRONZE);
+    check("bronze used", battle_use_potion(0, -1), 1);
+    check("bronze thorns", g_battle.thorns, 3);
+    battle_test_enemy_turn(0);
+    check("thorns player hurt", g_battle.hp, 70);
+    check("thorns enemy hurt", g_battle.enemies[0].hp, 47);
+
+    /* Dexterity Potion: +2 block on cards, and only on cards. */
+    fresh(50);
+    hand("Defend_R", 0);
+    battle_play(0, -1);
+    check("plain defend block", g_battle.block, 5);
+    fresh(50);
+    give_potion(POTION_DEX);
+    check("dex used", battle_use_potion(0, -1), 1);
+    hand("Defend_R", 0);
+    battle_play(0, -1);
+    check("dex defend block", g_battle.block, 7);
+
+    /* Regen Potion: heal 5 at the end of the turn, then 4, ... */
+    fresh(50);
+    g_battle.hp = 60;
+    give_potion(POTION_REGEN);
+    check("regen used", battle_use_potion(0, -1), 1);
+    check("regen stacks", g_battle.regen, 5);
+    battle_end_turn_powers_for_test();
+    check("regen heal 5", g_battle.hp, 65);
+    check("regen drop", g_battle.regen, 4);
+    battle_end_turn_powers_for_test();
+    check("regen heal 4", g_battle.hp, 69);
+
+    /* Blessing of the Forge upgrades every card in hand. */
+    fresh(50);
+    hand("Strike_R", 0);
+    hand_add("Defend_R");
+    give_potion(POTION_FORGE);
+    check("forge used", battle_use_potion(0, -1), 1);
+    check("forge strike up", battle_hand_up(0), 1);
+    check("forge defend up", battle_hand_up(1), 1);
+
+    /* Fruit Juice: increaseMaxHp(5, true). */
+    fresh(50);
+    g_battle.hp = 60;
+    give_potion(POTION_FRUIT);
+    check("fruit used", battle_use_potion(0, -1), 1);
+    check("fruit max hp", g_battle.max_hp, 85);
+    check("fruit hp", g_battle.hp, 65);
+
+    /* PotionHelper.getRandomPotion: the 65/25/10 rarity split. */
+    fresh(50);
+    g_battle.rng = 0x2468ACEu;
+    int seen[3] = {0, 0, 0};
+    int bad = 0;
+    for (int i = 0; i < 400; i++) {
+        g_run.potion_count = 0;
+        battle_add_random_potion();
+        int id = g_run.potions[0];
+        if (g_run.potion_count == 1 && id >= 0 && id < POTION_COUNT) {
+            seen[battle_potion_rarity(id)]++;
+        } else {
+            bad++;
+        }
+    }
+    check("random potion bad", bad, 0);
+    check("random potion common", seen[0] > 0, 1);
+    check("random potion uncommon", seen[1] > 0, 1);
+    check("random potion rare", seen[2] > 0, 1);
+}
+
 void card_test_run(void) {
     s_cases = 0;
     s_fails = 0;
@@ -4341,6 +4476,7 @@ void card_test_run(void) {
     test_lots_of_slimes();
     test_act2_pool();
     test_city_monsters();
+    test_potions();
     g_run.screen = SCREEN_MAP;
     audio_sfx_mute(0);
 }

@@ -628,19 +628,50 @@ int battle_relic_price(int id) {
     return 150;                             /* COMMON */
 }
 
-/* AbstractPotion.getPrice: COMMON 50, UNCOMMON 75, RARE 100.  Every potion in
- * POTION_NAMES is COMMON (BloodPotion .. StrengthPotion are all COMMON). */
+/* AbstractPotion.getPrice: COMMON 50, UNCOMMON 75, RARE 100.  The rarity split
+ * follows the game's own potions: BloodPotion .. StrengthPotion are COMMON,
+ * the three powers (Artifact, Thorns, Regen) are UNCOMMON and Fruit Juice is
+ * the single RARE potion ported so far. */
+enum { POTION_COMMON = 0, POTION_UNCOMMON, POTION_RARE };
+
+static int potion_rarity(int id) {
+    switch (id) {
+    case POTION_ANCIENT:
+    case POTION_BRONZE:
+    case POTION_REGEN:
+        return POTION_UNCOMMON;
+    case POTION_FRUIT:
+        return POTION_RARE;
+    default:
+        return POTION_COMMON;
+    }
+}
+
+int battle_potion_rarity(int id) {
+    if (id < 0 || id >= POTION_COUNT) return POTION_COMMON;
+    return potion_rarity(id);
+}
+
 int battle_potion_price(int id) {
-    (void)id;
-    return 50;
+    if (id < 0 || id >= POTION_COUNT) return 0;
+    switch (potion_rarity(id)) {
+    case POTION_UNCOMMON: return 75;
+    case POTION_RARE: return 100;
+    default: return 50;
+    }
 }
 
 static const char *POTION_NAMES[POTION_COUNT] = {
-    "血液药水", "火焰药水", "格挡药水", "迅捷药水", "能量药水", "力量药水",
+    "鲜血药水", "火焰药水", "格挡药水", "迅捷药水", "能量药水", "力量药水",
+    "爆炸药水", "恐惧药水", "虚弱药水", "先古药水", "流动铜液",
+    "敏捷药水", "再生药水", "熔炉的祝福", "果汁",
 };
 static const char *POTION_DESC[POTION_COUNT] = {
     "回复 20% 最大生命", "造成 20 点伤害", "获得 12 点格挡",
     "抽 3 张牌", "获得 2 点能量", "获得 2 点力量",
+    "对所有敌人造成 10 点伤害", "施加 3 层易伤", "施加 3 层虚弱",
+    "获得 1 层人工制品", "获得 3 层荆棘", "获得 2 点敏捷",
+    "获得 5 层再生", "升级手牌中的所有牌", "最大生命 +5，并回复 5 点生命",
 };
 
 int battle_toggle_cheat(void) {
@@ -672,7 +703,17 @@ int battle_add_potion(int id) {
 
 int battle_add_random_potion(void) {
     if (g_run.potion_count >= 3) return 0;
-    int id = (int)(rnd() % POTION_COUNT);
+    /* PotionHelper.getRandomPotion: roll the rarity first (65/25/10), then take
+     * a potion of that rarity.  A rarity with an empty pool falls back to the
+     * whole list so the reward is never lost. */
+    int roll = (int)(rnd() % 100u);
+    int rarity = roll < 65 ? POTION_COMMON : (roll < 90 ? POTION_UNCOMMON : POTION_RARE);
+    int pool[POTION_COUNT];
+    int n = 0;
+    for (int i = 0; i < POTION_COUNT; i++) {
+        if (potion_rarity(i) == rarity) pool[n++] = i;
+    }
+    int id = n > 0 ? pool[rnd() % (unsigned int)n] : (int)(rnd() % POTION_COUNT);
     g_run.potions[g_run.potion_count++] = (unsigned char)id;
     return 1;
 }
@@ -705,6 +746,49 @@ int battle_use_potion(int slot, int target) {
         break;
     case POTION_STR:
         g_battle.strength += 2;
+        break;
+    case POTION_EXPLOSIVE:
+        /* Explosive Potion: DamageAllEnemiesAction(10). */
+        hit_all(10);
+        break;
+    case POTION_FEAR:
+        /* FearPotion: Vulnerable(3) on one enemy. */
+        if (!enemy_alive(target)) return 0;
+        debuff_enemy(target, 0, 3);
+        break;
+    case POTION_WEAK:
+        /* Weak Potion: Weak(3) on one enemy. */
+        if (!enemy_alive(target)) return 0;
+        debuff_enemy(target, 3, 0);
+        break;
+    case POTION_ANCIENT:
+        /* Ancient Potion: Artifact(1). */
+        g_battle.artifact += 1;
+        break;
+    case POTION_BRONZE:
+        /* Liquid Bronze: Thorns(3). */
+        g_battle.thorns += 3;
+        break;
+    case POTION_DEX:
+        /* Dexterity Potion: Dexterity(2). */
+        g_battle.dexterity += 2;
+        break;
+    case POTION_REGEN:
+        /* Regen Potion: Regen(5). */
+        g_battle.regen += 5;
+        break;
+    case POTION_FORGE:
+        /* Blessing of the Forge: upgrade every card in hand for this combat. */
+        for (int i = 0; i < g_battle.hand_count; i++) {
+            if (can_upgrade_entry(g_battle.hand[i])) g_battle.hand[i] = upgrade_entry(g_battle.hand[i]);
+        }
+        audio_sfx(AUDIO_SFX_BUFF);
+        break;
+    case POTION_FRUIT:
+        /* Fruit Juice: increaseMaxHp(5, true) also heals the new max. */
+        g_battle.max_hp += 5;
+        g_battle.hp += 5;
+        audio_sfx(AUDIO_SFX_HEAL);
         break;
     default:
         return 0;
@@ -3428,6 +3512,10 @@ int battle_play(int slot, int target) {
                         g_battle.enemies[target].hp <= 0;
 
     int block = card_block(c, up);
+    /* DexterityPower.modifyBlock: cards that grant block get the bonus.  It is
+     * applied at the card site on purpose, so Metallicize, Orichalcum and the
+     * Block Potion keep paying their printed amount. */
+    if (block > 0 && g_battle.dexterity > 0) block += g_battle.dexterity;
     /* FrailPower.modifyBlock: 25% less block, from cards only. */
     if (g_battle.frail > 0) block = block * 3 / 4;
     if (strcmp(c->id, "Entrench") == 0) {
@@ -3874,6 +3962,12 @@ static int end_turn_powers(void) {
     /* atEndOfTurnPreEndTurnCards: Metallicize grants block before the enemies
      * swing, so it covers this enemy turn. */
     if (pw(POW_METALLICIZE)) gain_block(pw(POW_METALLICIZE));
+    /* RegenPower.atEndOfTurn -> RegenAction: heal first, then lose one stack. */
+    if (g_battle.regen > 0) {
+        g_battle.hp += g_battle.regen;
+        if (g_battle.hp > g_battle.max_hp) g_battle.hp = g_battle.max_hp;
+        g_battle.regen--;
+    }
     /* CombustPower.atEndOfTurn: pay HP, then burn every enemy. */
     if (pw(POW_COMBUST)) {
         lose_hp_from_card(g_battle.combust_hp > 0 ? g_battle.combust_hp : 1);
@@ -3975,6 +4069,9 @@ static int enemy_hit(Enemy *e, int index, int amount) {
     if (lost > 0 && e->painful_stabs) painful_stab();
     flame_hit(index);
     if (battle_has_relic(RELIC_BRONZE_SCALES)) damage_enemy_thorns(index, 3);
+    /* ThornsPower.onAttacked fires for every hit, so a multi-attack pays each
+     * time just like the Bronze Scales relic. */
+    if (g_battle.thorns > 0) damage_enemy_thorns(index, g_battle.thorns);
     return lost;
 }
 

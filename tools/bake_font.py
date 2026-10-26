@@ -44,10 +44,19 @@ _UI_WORDS = (
     "消耗虚无固有升级牌库弃置选择随机伤害抽牌当前状态"
 )
 
+# The port names and describes its potions in battle.c, not in the game's JSON,
+# so their glyphs have to be listed here or a name would bake as a blank box.
+_POTION_WORDS = (
+    "鲜血药水火焰格挡迅捷能量力量爆炸恐惧虚弱先古流动铜液敏捷再生"
+    "熔炉的祝福果汁"
+    "回复最大生命造成点伤害获得格挡抽张牌能量力量对所有敌人"
+    "施加层易伤虚弱人工制品荆棘敏捷再生升级手牌中的所有牌并"
+)
+
 
 def collect_charset(cards_path: str, l10n_glob: str) -> list[str]:
     """Every character the shipped JSON can ask us to draw."""
-    chars: set[str] = set(_ASCII) | set(_EXTRA) | set(_UI_WORDS)
+    chars: set[str] = set(_ASCII) | set(_EXTRA) | set(_UI_WORDS) | set(_POTION_WORDS)
 
     def add(text: str) -> None:
         for ch in _MARKUP.sub("", text or ""):

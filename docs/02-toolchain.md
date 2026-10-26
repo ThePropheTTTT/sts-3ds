@@ -149,6 +149,16 @@ build/hello3ds.elf    1264668 bytes  EXEC / ARM / entry 0x100000
 
 已知缺口：`Mugger` 只出现在第 2 幕的 "2 Thieves"；第 2/3 幕仍是 `setup_act2` 的脚本化摆位。
 
+## 药水
+
+药水按 `battle.h` 的 `POTION_*` 枚举取 id，共 15 种：前 6 种（鲜血、火焰、格挡、迅捷、能量、力量）是存档里已有的老 id，**只能在末尾追加新 id**，否则旧存档里的药水会变成别的瓶子。
+
+- 稀有度与定价跟原版一致：`potions.json` 的 common/uncommon/rare 抽中概率 65/25/10（`battle_add_random_potion` 先按这个掷稀有权重，再从该稀有度的池里等概率取），价格对应 50/75/100；
+- 效果：爆炸（全体 10 伤）、恐惧/虚弱（单体 3 层易伤/虚弱，要选目标）、先古（1 层人工制品）、流动铜液（3 层荆棘，每次被攻击反伤）、敏捷（2 层敏捷，只加卡牌获得的格挡）、再生（5 层再生，每回合结束回血后减 1）、熔炉的祝福（升级手牌全部可升级的牌）、果汁（最大生命 +5 并回 5 点生命）；
+- 药水图标是 `main.c` 里按 id 画的彩色瓶子（没有美术资源），商店/奖励仍以文字描述展示。
+
+药水名与描述写在 `battle.c` 的 `POTION_NAMES` / `POTION_DESC`，不在游戏的 JSON 语料里，所以新增文案后必须把这些字加进 `tools/bake_font.py` 的 `_POTION_WORDS` 并重烘字体（`tools/bake_font.py --sizes 12,16,20` → `tools/to_t3x.sh`），否则缺字会静默画成空白：本轮就先把「果汁」的「汁」画没了，直到补语料+重烘才显示全。
+
 ## 模拟器输入的边界
 
 Azahar 的 `GRenderWindow::mousePressEvent` 会直接忽略 `Qt::MouseEventSynthesizedBySystem`。从主机发 `PostMessage`/`SendMessage` 鼠标消息、`mouse_event` 或 `SendInput`，在 Qt 看来都是合成鼠标，因此无法用它们验收触屏拖牌；Windows 的 `InitializeTouchInjection`/`InjectTouchInput` 在当前会话也会返回 87/5（参数错误/拒绝访问）。触屏请在真机上用手写笔/手指验收。

@@ -1364,6 +1364,15 @@ static void draw_potion_icon_sized(float x, float y, int id, int lit, float size
     else if (id == POTION_DRAW) color = RGB(200, 190, 90);
     else if (id == POTION_ENERGY) color = RGB(240, 210, 110);
     else if (id == POTION_STR) color = RGB(220, 110, 160);
+    else if (id == POTION_EXPLOSIVE) color = RGB(240, 160, 60);
+    else if (id == POTION_FEAR) color = RGB(150, 110, 200);
+    else if (id == POTION_WEAK) color = RGB(130, 140, 150);
+    else if (id == POTION_ANCIENT) color = RGB(230, 200, 120);
+    else if (id == POTION_BRONZE) color = RGB(200, 150, 70);
+    else if (id == POTION_DEX) color = RGB(120, 200, 150);
+    else if (id == POTION_REGEN) color = RGB(120, 210, 110);
+    else if (id == POTION_FORGE) color = RGB(230, 120, 70);
+    else if (id == POTION_FRUIT) color = RGB(220, 100, 140);
     /* Bottle silhouette: cork, neck, round body, a highlight.  The port invents
      * its own potions, so this stays a shape standing in for the game's layered
      * potion art. */
@@ -2042,6 +2051,12 @@ static int status_collect(StatusRow *rows, int max) {
                    "免疫负面效果", buff);
     n = status_add(rows, n, max, "无实体", g_battle.intangible,
                    "受到的伤害降为 1", buff);
+    n = status_add(rows, n, max, "敏捷", g_battle.dexterity,
+                   "卡牌获得的格挡提高", buff);
+    n = status_add(rows, n, max, "再生", g_battle.regen,
+                   "回合结束回复生命，然后减少 1 层", buff);
+    n = status_add(rows, n, max, "荆棘", g_battle.thorns,
+                   "受到攻击时对攻击者造成伤害", buff);
     n = status_add(rows, n, max, "困惑", g_battle.confused,
                    "抽到的牌费用随机", debuff);
     if (n == player_start) {
@@ -3678,7 +3693,7 @@ static void handle_buttons(u32 kDown) {
                     if (s_potion_sel >= count) s_potion_sel = 0;
                     if (kDown & KEY_A) {
                         int id = battle_potion_at(s_potion_sel);
-                        if (id == POTION_FIRE) {
+                        if (id == POTION_FIRE || id == POTION_FEAR || id == POTION_WEAK) {
                             s_pending_potion = s_potion_sel;
                             s_detail = 0;
                             s_target_mode = 1;
