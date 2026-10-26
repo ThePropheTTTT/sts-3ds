@@ -330,8 +330,14 @@ void battle_test_spawn_gremlin_leader(void);
 void battle_test_spawn_gremlin_minion(int slot, int which);
 void battle_test_damage_enemy(int index, int amount);
 void battle_test_spawn_slavers(void);
-/* 0 two Byrds, 1 Chosen, 2 Shelled Parasite, 3 Spheric Guardian. */
+/* 0 two Byrds, 1 Chosen, 2 Shelled Parasite, 3 Spheric Guardian, 4 Mugger,
+ * 5 three Byrds, 6 two Thieves, 7 Chosen and Byrds, 8 Cultist and Chosen,
+ * 9 three Cultists, 10 Shelled Parasite and Fungi. */
 void battle_test_spawn_act2_monster(int which);
+/* The act 2 encounter picked for the n-th monster room of the act, and the
+ * same walk the real city monster rooms use. */
+int battle_test_encounter_id_act2(int n);
+void battle_test_spawn_act2_pool(int n);
 /* 0 Slime Boss, 1 Gremlin Nob, 2 two Acid Slimes (M), 3 Jaw Worm. */
 void battle_test_spawn_act1(int which);
 /* The act 1 encounter picked for the n-th monster room of the act. */

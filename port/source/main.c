@@ -50,12 +50,12 @@ static C2D_SpriteSheet s_act_sheets[3];
 static C2D_Image s_act_img[3];
 static C2D_SpriteSheet s_mon_sheet;
 static C2D_SpriteSheet s_mon_sheet_ref;
-static C2D_Image s_mon_img[33];
-static Tex3DS_SubTexture s_mon_subs[33];
+static C2D_Image s_mon_img[34];
+static Tex3DS_SubTexture s_mon_subs[34];
 
 /* 1024x1024 page produced by tools/extract_monsters.py (8x8 cells of 96px).
  * NULL means the bake did not look right yet, so the placeholder box is used. */
-static const char *MON_KEYS[33] = {
+static const char *MON_KEYS[34] = {
     "球体守卫", "史莱姆老大", "勇者", "酸液史莱姆",
     "尖刺史莱姆", "颚虫", "地精大块头", "红虱虫",
     "真菌怪", "邪教徒", "寄生兽", "异鸟",
@@ -64,11 +64,11 @@ static const char *MON_KEYS[33] = {
     "铜制机械人偶", "收藏家", "火炬头",
     "地精首领", "火大地精", "卑鄙地精", "胖地精", "持盾地精", "地精法师",
     "铜球", "虱虫",
-    "小酸液史莱姆", "小尖刺史莱姆", "掠夺者",
+    "小酸液史莱姆", "小尖刺史莱姆", "掠夺者", "打劫的",
 };
 
 static int monster_slot(const char *name) {
-    for (int i = 0; i < 33; i++) {
+    for (int i = 0; i < 34; i++) {
         if (MON_KEYS[i] && strcmp(name, MON_KEYS[i]) == 0) return i;
     }
     return -1;
@@ -470,7 +470,7 @@ static void load_art(void) {
     if (s_mon_sheet) {
         C2D_Image img = C2D_SpriteSheetGetImage(s_mon_sheet, 0);
         s_vis_tex = s_vis_tex ? s_vis_tex : img.tex;
-        for (int i = 0; i < 33; i++) {
+        for (int i = 0; i < 34; i++) {
             C2D_Image one = {img.tex, NULL};
             Tex3DS_SubTexture *sub = &s_mon_subs[i];
             float x = (float)((i % 8) * 96);
@@ -4081,8 +4081,11 @@ int main(int argc, char **argv) {
              * two Fungi Beasts (28), one on its own (29), the Gremlin Gang
              * (30), the large Acid/Spike Slimes (31, 32), the Looter (33),
              * the lone Blue and Red Slavers (34, 35), Exordium Thugs (36),
-             * Exordium Wildlife (37), Lots of Slimes (38), Purity's
-             * multi-select (19) and Forethought's bottom-pick (20).  The two
+             * Exordium Wildlife (37), Lots of Slimes (38), then the city's
+             * line-ups: the Mugger (39), three Byrds (40), two Thieves (41),
+             * Chosen and Byrds (42), Cultist and Chosen (43), three Cultists
+             * (44), Shelled Parasite and Fungi (45), Purity's multi-select
+             * (19) and Forethought's bottom-pick (20).  The two
              * draw-pile pickers (16, 17) are skipped here: they end on
              * SCREEN_PICK, where B only cancels the picker, so B cannot cycle
              * past them. */
@@ -4090,7 +4093,7 @@ int main(int argc, char **argv) {
                 card_test_demo_fight(s_boss_demo);
                 s_boss_demo++;
                 if (s_boss_demo == 16 || s_boss_demo == 17) s_boss_demo = 18;
-                if (s_boss_demo > 38) s_boss_demo = 7;
+                if (s_boss_demo > 45) s_boss_demo = 7;
             }
         }
         update_play_fx();

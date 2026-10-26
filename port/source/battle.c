@@ -386,6 +386,14 @@ static const EnemyMove LOOTER_MOVES[] = {
     {MOVE_ESCAPE, 0, 0, 0},
     {MOVE_MUG, 12, 0, 0},
 };
+/* Mugger.java runs the Looter's script with the city's numbers: Mug 10, Smoke
+ * Bomb 11 block, Escape, and a 16 damage swipe for the turn before the bomb. */
+static const EnemyMove MUGGER_MOVES[] = {
+    {MOVE_MUG, 10, 0, 0},
+    {MOVE_SMOKE, 11, 0, 0},
+    {MOVE_ESCAPE, 0, 0, 0},
+    {MOVE_MUG, 16, 0, 0},
+};
 static const EnemyMove JAW_WORM_MOVES[] = {
     {MOVE_ATTACK, 11, 0, 0},       /* Chomp */
     {MOVE_ATTACK_BLOCK, 7, 5, 0},  /* Thrash */
@@ -772,10 +780,11 @@ static void choose_move_roll(Enemy *e, unsigned int roll) {
         e->move_index = e->first_turn ? 0 : 1;
         return;
     }
-    if (e->moves == LOOTER_MOVES) {
-        /* Looter.getMove only ever returns Mug.  The Mug/Lunge/Smoke Bomb/Escape
-         * sequence is scripted inside takeTurn, so a fresh enemy starts with
-         * Mug and every later step sets its own move. */
+    if (e->moves == LOOTER_MOVES || e->moves == MUGGER_MOVES) {
+        /* Looter.getMove only ever returns Mug, and Mugger.getMove does the
+         * same.  The Mug/Lunge/Smoke Bomb/Escape sequence is scripted inside
+         * takeTurn, so a fresh thief starts with Mug and every later step sets
+         * its own move. */
         e->move_index = 0;
         return;
     }
@@ -1157,6 +1166,15 @@ static void choose_move(Enemy *e) { choose_move_roll(e, rnd() % 100); }
 /* One act 2 normal encounter.  which: 0 two Byrds, 1 Chosen, 2 Shelled
  * Parasite, 3 Spheric Guardian.  Pre-battle powers and the opening move are
  * applied here, the way usePreBattleAction()/init() do in the game. */
+/* The city's monster rooms come from real pools (setup_act2_pool_encounter); a
+ * few act 1 monsters come back in its strong line-ups, so their setup helpers
+ * are declared up here. */
+static void setup_act2_pool_encounter(int n);
+static int act_monster_rooms(void);
+static void setup_act1_cultist(int slot);
+static void setup_act1_fungi(int slot);
+static void setup_act1_looter(int slot);
+
 static void setup_act2_byrd(int slot) {
     add_enemy(slot, "异鸟", 25 + (int)(battle_rand() % 7));
     Enemy *e = &g_battle.enemies[slot];
@@ -1168,52 +1186,112 @@ static void setup_act2_byrd(int slot) {
     choose_move(e);
 }
 
+/* Chosen.java: 95-99 HP, five moves; AbstractMonster.init() rolls Poke. */
+static void setup_act2_chosen(int slot) {
+    add_enemy(slot, "天选者", 95 + (int)(battle_rand() % 5));
+    Enemy *e = &g_battle.enemies[slot];
+    e->moves = CHOSEN_MOVES;
+    e->move_count = 5;
+    e->last_move = 255;
+    e->last_before = 255;
+    choose_move(e);              /* first turn: Poke */
+}
+
+/* ShelledParasite.java: 68-72 HP, Plated Armor 14 and 14 block on spawn. */
+static void setup_act2_parasite(int slot) {
+    add_enemy(slot, "寄生兽", 68 + (int)(battle_rand() % 5));
+    Enemy *e = &g_battle.enemies[slot];
+    e->moves = PARASITE_MOVES;
+    e->move_count = 4;
+    e->plated = 14;              /* PlatedArmorPower(14) + 14 block */
+    e->block = 14;
+    e->last_move = 255;
+    e->last_before = 255;
+    choose_move(e);
+}
+
+/* SphericGuardian.java: 20 HP behind 40 block, Barricade and Artifact 3. */
+static void setup_act2_orb(int slot) {
+    add_enemy(slot, "球体守卫", 20);
+    Enemy *e = &g_battle.enemies[slot];
+    e->moves = ORB_MOVES;
+    e->move_count = 4;
+    e->block = 40;               /* initial Block */
+    e->barricade = 1;            /* BarricadePower */
+    e->artifact = 3;             /* ArtifactPower(3) */
+    e->second_move = 1;
+    e->last_move = 255;
+    e->last_before = 255;
+    choose_move(e);              /* first turn: Initial Block */
+}
+
+/* Mugger.java: 48-52 HP; the Looter's script with the city's numbers. */
+static void setup_act2_mugger(int slot) {
+    add_enemy(slot, "打劫的", 48 + (int)(battle_rand() % 5));
+    Enemy *e = &g_battle.enemies[slot];
+    e->moves = MUGGER_MOVES;
+    e->move_count = 4;
+    e->last_move = 255;
+    e->last_before = 255;
+    choose_move(e);              /* first turn: Mug */
+}
+
+static void setup_act2_byrds(int count) {
+    for (int i = 0; i < count; i++) setup_act2_byrd(i);
+    g_battle.enemy_count = count;
+}
+
+/* MonsterHelper "2 Thieves": a Looter and a Mugger side by side. */
+static void setup_act2_thieves(void) {
+    g_battle.enemy_count = 2;
+    setup_act1_looter(0);
+    setup_act2_mugger(1);
+}
+
+/* Demo fixtures; the real monster rooms go through setup_act2_pool_encounter. */
 static void setup_act2_monster(int which) {
     g_battle.enemy_count = 0;
     if (which == 0) {
-        setup_act2_byrd(0);
-        setup_act2_byrd(1);
-        g_battle.enemy_count = 2;
+        setup_act2_byrds(2);
         return;
     }
+    g_battle.enemy_count = 1;
     if (which == 1) {
-        add_enemy(0, "天选者", 95 + (int)(battle_rand() % 5));
-        Enemy *e = &g_battle.enemies[0];
-        e->moves = CHOSEN_MOVES;
-        e->move_count = 5;
-        e->last_move = 255;
-        e->last_before = 255;
-        choose_move(e);              /* first turn: Poke */
-        g_battle.enemy_count = 1;
+        setup_act2_chosen(0);
         return;
     }
     if (which == 2) {
-        add_enemy(0, "寄生兽", 68 + (int)(battle_rand() % 5));
-        Enemy *e = &g_battle.enemies[0];
-        e->moves = PARASITE_MOVES;
-        e->move_count = 4;
-        e->plated = 14;              /* PlatedArmorPower(14) + 14 block */
-        e->block = 14;
-        e->last_move = 255;
-        e->last_before = 255;
-        choose_move(e);
-        g_battle.enemy_count = 1;
+        setup_act2_parasite(0);
         return;
     }
-    add_enemy(0, "球体守卫", 20);
-    {
-        Enemy *e = &g_battle.enemies[0];
-        e->moves = ORB_MOVES;
-        e->move_count = 4;
-        e->block = 40;               /* initial Block */
-        e->barricade = 1;            /* BarricadePower */
-        e->artifact = 3;             /* ArtifactPower(3) */
-        e->second_move = 1;
-        e->last_move = 255;
-        e->last_before = 255;
-        choose_move(e);              /* first turn: Initial Block */
+    if (which == 3) {
+        setup_act2_orb(0);
+        return;
     }
-    g_battle.enemy_count = 1;
+    /* 4 onwards: one fixture per pool line-up. */
+    if (which == 4) { setup_act2_mugger(0); return; }
+    if (which == 5) { setup_act2_byrds(3); return; }
+    if (which == 6) { setup_act2_thieves(); return; }
+    if (which == 7) {
+        g_battle.enemy_count = 2;
+        setup_act2_byrd(0);
+        setup_act2_chosen(1);
+        return;
+    }
+    if (which == 8) {
+        g_battle.enemy_count = 2;
+        setup_act1_cultist(0);
+        setup_act2_chosen(1);
+        return;
+    }
+    if (which == 9) {
+        g_battle.enemy_count = 3;
+        for (int i = 0; i < 3; i++) setup_act1_cultist(i);
+        return;
+    }
+    g_battle.enemy_count = 2;
+    setup_act2_parasite(0);
+    setup_act1_fungi(1);
 }
 
 /* The three Slavers, left to right: blue, taskmaster, red. */
@@ -1459,8 +1537,9 @@ static void setup_act2(int kind) {
         return;
     }
     if (kind == NODE_MONSTER) {
-        int roll = (int)(battle_rand() % 100);
-        setup_act2_monster(roll < 34 ? 0 : roll < 67 ? 1 : roll < 85 ? 2 : 3);
+        /* Regular city monster rooms: walk the act's weak / strong queue. */
+        int rooms = act_monster_rooms();
+        setup_act2_pool_encounter(rooms > 0 ? rooms - 1 : 0);
         return;
     }
     setup_act2_monster(0);
@@ -1712,7 +1791,7 @@ static const unsigned char STRONG_POOL[] = {
 
 /* Monster rooms the player has stood in this act, the current one included;
  * map_enter marks the room before battle_start runs. */
-static int act1_monster_rooms(void) {
+static int act_monster_rooms(void) {
     int n = 0;
     for (int r = 0; r < MAP_ROWS; r++) {
         for (int c = 0; c < MAP_COLS; c++) {
@@ -1722,16 +1801,24 @@ static int act1_monster_rooms(void) {
     return n;
 }
 
-int battle_test_encounter_id(int n) {
-    int weak = n < WEAK_POOL_FIGHTS;
-    const unsigned char *pool = weak ? WEAK_POOL : STRONG_POOL;
-    int count = weak ? WEAK_POOL_COUNT : STRONG_POOL_COUNT;
+/* AbstractDungeon refreshes the act's monster list when it empties and never
+ * repeats the previous encounter, so the port walks a shuffled copy of the
+ * pool in order: the first WEAK_POOL_FIGHTS rooms come from the weak pool, the
+ * rest cycle through the strong one.  The shuffle is seeded from the map seed
+ * so a given run always meets the same sequence. */
+static int pool_encounter_id(int n, const unsigned char *weak_pool, int weak_count,
+                             const unsigned char *strong_pool, int strong_count,
+                             unsigned int tag) {
+    int is_weak = n < WEAK_POOL_FIGHTS;
+    const unsigned char *pool = is_weak ? weak_pool : strong_pool;
+    int count = is_weak ? weak_count : strong_count;
     unsigned int seed = g_map.map_seed ? g_map.map_seed : 0x51F3u;
     seed ^= (unsigned int)g_run.act * 0x9E3779B9u;
-    seed ^= weak ? 0x5A5A5A5Au : 0xA5A5A5A5u;
+    seed ^= tag ^ (is_weak ? 0x5A5A5A5Au : 0xA5A5A5A5u);
     if (seed == 0) seed = 0x1234567u;
 
-    unsigned char order[STRONG_POOL_COUNT];
+    unsigned char order[16];
+    if (count > 16) count = 16;
     for (int i = 0; i < count; i++) order[i] = pool[i];
     for (int i = count - 1; i > 0; i--) {
         seed ^= seed << 13;
@@ -1742,7 +1829,12 @@ int battle_test_encounter_id(int n) {
         order[i] = order[j];
         order[j] = tmp;
     }
-    return order[weak ? n : (n - WEAK_POOL_FIGHTS) % count];
+    return order[is_weak ? n : (n - WEAK_POOL_FIGHTS) % count];
+}
+
+int battle_test_encounter_id(int n) {
+    return pool_encounter_id(n, WEAK_POOL, WEAK_POOL_COUNT,
+                             STRONG_POOL, STRONG_POOL_COUNT, 0u);
 }
 
 static void setup_act1_pool_encounter(int n) {
@@ -1801,6 +1893,84 @@ static void setup_act1_pool_encounter(int n) {
     }
 }
 
+/* The city's pools (MonsterHelper.java:857-869).  Four strong line-ups still
+ * need monsters the port does not have yet -- Sentry and Sphere, Snake Plant,
+ * Snecko, Centurion and Healer -- and join the list as those land. */
+enum {
+    ENC2_CHOSEN,
+    ENC2_PARASITE,
+    ENC2_SPHERE,
+    ENC2_THREE_BYRDS,
+    ENC2_TWO_THIEVES,
+    ENC2_CHOSEN_AND_BYRDS,
+    ENC2_CULTIST_AND_CHOSEN,
+    ENC2_THREE_CULTISTS,
+    ENC2_PARASITE_AND_FUNGI,
+};
+
+static const unsigned char WEAK2_POOL[] = {
+    ENC2_CHOSEN, ENC2_PARASITE, ENC2_SPHERE, ENC2_THREE_BYRDS, ENC2_TWO_THIEVES,
+};
+static const unsigned char STRONG2_POOL[] = {
+    ENC2_CHOSEN_AND_BYRDS, ENC2_CULTIST_AND_CHOSEN, ENC2_THREE_CULTISTS,
+    ENC2_PARASITE_AND_FUNGI,
+};
+
+#define WEAK2_POOL_COUNT 5
+#define STRONG2_POOL_COUNT 4
+
+int battle_test_encounter_id_act2(int n) {
+    return pool_encounter_id(n, WEAK2_POOL, WEAK2_POOL_COUNT,
+                             STRONG2_POOL, STRONG2_POOL_COUNT, 0x3C3C3C3Cu);
+}
+
+static void setup_act2_pool_encounter(int n) {
+    g_battle.enemy_count = 0;
+    switch (battle_test_encounter_id_act2(n)) {
+    case ENC2_CHOSEN:
+        g_battle.enemy_count = 1;
+        setup_act2_chosen(0);
+        break;
+    case ENC2_PARASITE:
+        g_battle.enemy_count = 1;
+        setup_act2_parasite(0);
+        break;
+    case ENC2_SPHERE:
+        g_battle.enemy_count = 1;
+        setup_act2_orb(0);
+        break;
+    case ENC2_THREE_BYRDS:
+        setup_act2_byrds(3);
+        break;
+    case ENC2_TWO_THIEVES:
+        setup_act2_thieves();
+        break;
+    case ENC2_CHOSEN_AND_BYRDS:
+        g_battle.enemy_count = 2;
+        setup_act2_byrd(0);
+        setup_act2_chosen(1);
+        break;
+    case ENC2_CULTIST_AND_CHOSEN:
+        g_battle.enemy_count = 2;
+        setup_act1_cultist(0);
+        setup_act2_chosen(1);
+        break;
+    case ENC2_THREE_CULTISTS:
+        g_battle.enemy_count = 3;
+        for (int i = 0; i < 3; i++) setup_act1_cultist(i);
+        break;
+    case ENC2_PARASITE_AND_FUNGI:
+        g_battle.enemy_count = 2;
+        setup_act2_parasite(0);
+        setup_act1_fungi(1);
+        break;
+    default:
+        g_battle.enemy_count = 1;
+        setup_act2_chosen(0);
+        break;
+    }
+}
+
 static void setup_encounter(int kind) {
     g_battle.enemy_count = 0;
 
@@ -1833,7 +2003,7 @@ static void setup_encounter(int kind) {
         return;
     }
     /* Regular monster rooms: walk the act's weak / strong queue. */
-    int rooms = act1_monster_rooms();
+    int rooms = act_monster_rooms();
     setup_act1_pool_encounter(rooms > 0 ? rooms - 1 : 0);
 }
 
@@ -4020,6 +4190,17 @@ void battle_test_spawn_act2_monster(int which) {
     g_battle.phase = PHASE_PLAYER;
     g_battle.pending_split = -1;
     setup_act2_monster(which);
+}
+
+void battle_test_spawn_act2_pool(int n) {
+    memset(&g_battle, 0, sizeof(g_battle));
+    g_battle.hp = 80;
+    g_battle.max_hp = 80;
+    g_battle.energy = 3;
+    g_battle.max_energy = 3;
+    g_battle.phase = PHASE_PLAYER;
+    g_battle.pending_split = -1;
+    setup_act2_pool_encounter(n);
 }
 
 static unsigned int s_test_spawn_seed;

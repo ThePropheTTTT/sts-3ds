@@ -2874,10 +2874,16 @@ void card_test_demo_fight(int which) {
      * Slime Boss' two split slimes, 16/17 the two draw-pile pickers, 18 the
      * last four powers (Panacea/Ghostly/Dark Shackles/Enlightenment) on a pair
      * of Acid Slimes, 19 Purity's multi-select, 20 Forethought's bottom-pick,
-     * 21 the Cultist, 22 two Louses, 23 three Louses.
+     * 21 the Cultist, 22 two Louses, 23 three Louses, 24 the Small Slimes
+     * pair, 25 SpikeSlime (M), 26 AcidSlime (S), 27 SpikeSlime (S), 28 two
+     * Fungi Beasts, 29 one Fungi Beast, 30 the Gremlin Gang, 31 AcidSlime (L),
+     * 32 SpikeSlime (L), 33 the Looter, 34 Blue Slaver, 35 Red Slaver, 36
+     * Exordium Thugs, 37 Exordium Wildlife, 38 Lots of Slimes, 39 the Mugger,
+     * 40 three Byrds, 41 two Thieves, 42 Chosen and Byrds, 43 Cultist and
+     * Chosen, 44 three Cultists, 45 Shelled Parasite and Fungi.
      * Same spawn path the real encounter uses, then a hand so the bottom
      * screen has cards to draw. */
-    if (which < 0 || which > 38) which = 0;
+    if (which < 0 || which > 45) which = 0;
     if (which == 10) battle_test_spawn_act2(1);
     else if (which == 11) battle_test_spawn_act1(0);
     else if (which == 12) battle_test_spawn_act1(1);
@@ -2906,6 +2912,9 @@ void card_test_demo_fight(int which) {
     else if (which == 36) battle_test_spawn_act1(21);  /* Exordium Thugs */
     else if (which == 37) battle_test_spawn_act1(22);  /* Exordium Wildlife */
     else if (which == 38) battle_test_spawn_act1(23);  /* Lots of Slimes */
+    else if (which >= 39 && which <= 45) {             /* the act 2 line-ups */
+        battle_test_spawn_act2_monster(which - 35);
+    }
     else if (which == 6) battle_test_spawn_slavers();
     else if (which == 7) {
         battle_test_spawn_automaton();
@@ -2921,7 +2930,8 @@ void card_test_demo_fight(int which) {
         battle_test_spawn_gremlin_minion(3, 2);
     } else if (which <= 1) battle_test_spawn_act2(which == 0 ? 1 : 0);
     else battle_test_spawn_act2_monster(which - 2);
-    g_run.act = (which == 10) ? 3 : (which >= 11 ? 1 : 2); /* display is 1-based */
+    g_run.act = (which == 10) ? 3
+                : ((which >= 11 && which <= 38) ? 1 : 2); /* display is 1-based */
     g_map.gold = 99;
     g_run.screen = SCREEN_FIGHT;
     g_battle.phase = PHASE_PLAYER;
@@ -3950,6 +3960,158 @@ static void test_lots_of_slimes(void) {
     check("lots demo count", g_battle.enemy_count, 5);
 }
 
+static void test_act2_pool(void) {
+    /* The city's weak pool holds five single-monster line-ups and the strong
+     * pool the four multi-monster ones the port already knows.  The first
+     * three monster rooms of act 2 come from the weak pool, the rest from the
+     * strong one (MonsterHelper.java:857-869, AbstractDungeon's three-fight
+     * rule). */
+    int weak_ok = 1, strong_ok = 1, stable = 1;
+    int seen[9] = {0};
+    for (int n = 0; n < 12; n++) {
+        int id = battle_test_encounter_id_act2(n);
+        if (n < 3) {
+            if (id < 0 || id > 4) weak_ok = 0;
+        } else if (id < 5 || id > 8) {
+            strong_ok = 0;
+        }
+        if (id >= 0 && id < 9) seen[id]++;
+        if (battle_test_encounter_id_act2(n) != id) stable = 0;
+    }
+    check("act 2 weak pool in range", weak_ok, 1);
+    check("act 2 strong pool in range", strong_ok, 1);
+    check("act 2 pick is stable", stable, 1);
+    int weak_seen = 0, strong_seen = 0;
+    for (int i = 0; i < 5; i++) if (seen[i] > 0) weak_seen++;
+    for (int i = 5; i < 9; i++) if (seen[i] > 0) strong_seen++;
+    check("act 2 pool varies", weak_seen + strong_seen >= 2, 1);
+
+    /* Whatever the shuffle picks, every city pool slot spawns a live
+     * line-up: one to three enemies, all with art and HP. */
+    int spawn_ok = 1, count_ok = 1;
+    for (int n = 0; n < 8; n++) {
+        battle_test_spawn_act2_pool(n);
+        if (g_battle.enemy_count < 1 || g_battle.enemy_count > 3) count_ok = 0;
+        for (int i = 0; i < g_battle.enemy_count && i < 5; i++) {
+            if (g_battle.enemies[i].hp <= 0) spawn_ok = 0;
+            if (!g_battle.enemies[i].name || !g_battle.enemies[i].name[0]) spawn_ok = 0;
+            if (!g_battle.enemies[i].art || !g_battle.enemies[i].art[0]) spawn_ok = 0;
+        }
+    }
+    check("act 2 pool spawns live line-ups", spawn_ok, 1);
+    check("act 2 pool enemy counts", count_ok, 1);
+
+    /* The line-ups themselves, through the demo fixtures. */
+    battle_test_spawn_act2_monster(1);
+    check("chosen count", g_battle.enemy_count, 1);
+    check("chosen name", strcmp(g_battle.enemies[0].name, "天选者"), 0);
+    check("chosen hp", g_battle.enemies[0].max_hp >= 95 && g_battle.enemies[0].max_hp <= 99, 1);
+
+    battle_test_spawn_act2_monster(2);
+    check("parasite count", g_battle.enemy_count, 1);
+    check("parasite name", strcmp(g_battle.enemies[0].name, "寄生兽"), 0);
+    check("parasite plated", g_battle.enemies[0].plated, 14);
+    check("parasite block", g_battle.enemies[0].block, 14);
+
+    battle_test_spawn_act2_monster(3);
+    check("sphere hp", g_battle.enemies[0].hp, 20);
+    check("sphere block", g_battle.enemies[0].block, 40);
+    check("sphere barricade", g_battle.enemies[0].barricade, 1);
+    check("sphere artifact", g_battle.enemies[0].artifact, 3);
+
+    battle_test_spawn_act2_monster(5);
+    check("three byrds count", g_battle.enemy_count, 3);
+    check("three byrds names", strcmp(g_battle.enemies[2].name, "异鸟"), 0);
+
+    battle_test_spawn_act2_monster(6);
+    check("two thieves count", g_battle.enemy_count, 2);
+    check("thieves looter name", strcmp(g_battle.enemies[0].name, "掠夺者"), 0);
+    check("thieves mugger name", strcmp(g_battle.enemies[1].name, "打劫的"), 0);
+
+    /* The strong line-ups, including the two that borrow act 1 monsters. */
+    battle_test_spawn_act2_monster(7);
+    check("chosen and byrds count", g_battle.enemy_count, 2);
+    check("chosen and byrds names",
+          strcmp(g_battle.enemies[0].name, "异鸟") == 0 &&
+          strcmp(g_battle.enemies[1].name, "天选者") == 0, 1);
+
+    battle_test_spawn_act2_monster(8);
+    check("cultist and chosen count", g_battle.enemy_count, 2);
+    check("cultist and chosen names",
+          strcmp(g_battle.enemies[0].name, "邪教徒") == 0 &&
+          strcmp(g_battle.enemies[1].name, "天选者") == 0, 1);
+
+    battle_test_spawn_act2_monster(9);
+    check("three cultists count", g_battle.enemy_count, 3);
+    check("three cultists open with Incantation",
+          g_battle.enemies[2].moves[g_battle.enemies[2].move_index].kind, MOVE_RITUAL);
+
+    battle_test_spawn_act2_monster(10);
+    check("parasite and fungi count", g_battle.enemy_count, 2);
+    check("parasite and fungi names",
+          strcmp(g_battle.enemies[0].name, "寄生兽") == 0 &&
+          strcmp(g_battle.enemies[1].name, "真菌怪") == 0, 1);
+
+    /* The Mugger runs the Looter's script with the city numbers: 10 damage
+     * and 15 gold, then a 16-damage big swipe or the smoke bomb, then escape.
+     * Its gold only comes back when it dies. */
+    battle_test_spawn_act2_monster(4);
+    Enemy *e = &g_battle.enemies[0];
+    check("mugger hp", e->max_hp >= 48 && e->max_hp <= 52, 1);
+    check("mugger name", strcmp(e->name, "打劫的"), 0);
+    check("mugger moves", e->move_count, 4);
+    check("mugger opens with mug", e->moves[e->move_index].kind, MOVE_MUG);
+    check("mugger mug damage", e->moves[e->move_index].value, 10);
+
+    g_map.gold = 99;
+    g_battle.hp = 80;
+    battle_test_enemy_turn(0);
+    check("mugger takes gold", g_map.gold, 84);
+    check("mugger keeps gold", e->stolen_gold, 15);
+    check("mugger mug hits", g_battle.hp, 70);
+    battle_test_enemy_turn(0);
+    check("mugger mugs again", g_map.gold, 69);
+    check("mugger hoard", e->stolen_gold, 30);
+
+    int next = e->moves[e->move_index].kind;
+    check("mugger prepares to leave", next == MOVE_MUG || next == MOVE_SMOKE, 1);
+    if (next == MOVE_MUG) {
+        check("mugger big swipe damage", e->moves[e->move_index].value, 16);
+        battle_test_enemy_turn(0);
+        check("mugger big swipe steals", g_map.gold, 54);
+        check("mugger big swipe hoard", e->stolen_gold, 45);
+        check("mugger big swipe leads to smoke", e->moves[e->move_index].kind, MOVE_SMOKE);
+    }
+    int gold_before_escape = g_map.gold;
+    battle_test_enemy_turn(0);
+    check("mugger smoke block", e->block >= 11, 1);
+    check("mugger escape intent", e->moves[e->move_index].kind, MOVE_ESCAPE);
+    battle_test_enemy_turn(0);
+    check("mugger escaped", e->escaped, 1);
+    check("mugger gone", e->hp, 0);
+    check("mugger keeps stolen gold", g_map.gold, gold_before_escape);
+
+    battle_test_spawn_act2_monster(4);
+    e = &g_battle.enemies[0];
+    g_map.gold = 99;
+    g_battle.hp = 80;
+    battle_test_enemy_turn(0);
+    check("mugger death test gold", g_map.gold, 84);
+    battle_test_damage_enemy(0, 99);
+    check("mugger refunds on death", g_map.gold, 99);
+    check("mugger dead", e->hp, 0);
+
+    /* The report screen's city line-up demos. */
+    card_test_demo_fight(39);
+    check("mugger demo name", strcmp(g_battle.enemies[0].name, "打劫的"), 0);
+    card_test_demo_fight(41);
+    check("thieves demo count", g_battle.enemy_count, 2);
+    card_test_demo_fight(44);
+    check("three cultists demo count", g_battle.enemy_count, 3);
+    card_test_demo_fight(45);
+    check("parasite and fungi demo count", g_battle.enemy_count, 2);
+}
+
 void card_test_run(void) {
     s_cases = 0;
     s_fails = 0;
@@ -3983,6 +4145,7 @@ void card_test_run(void) {
     test_mixed_encounters();
     test_encounter_pool();
     test_lots_of_slimes();
+    test_act2_pool();
     g_run.screen = SCREEN_MAP;
     audio_sfx_mute(0);
 }

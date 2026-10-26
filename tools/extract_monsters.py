@@ -90,6 +90,7 @@ SPINE_EXTRA = [
     ("小酸液史莱姆", "images/monsters/theBottom/slimeS"),
     ("小尖刺史莱姆", "images/monsters/theBottom/slimeAltS"),
     ("掠夺者", "images/monsters/theBottom/looter"),
+    ("打劫的", "images/monsters/theCity/looterAlt"),
 ]
 
 
