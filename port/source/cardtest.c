@@ -3565,7 +3565,7 @@ static void test_fungi(void) {
     battle_test_spawn_act1(13);
     Enemy *e = &g_battle.enemies[0];
     check("fungi hp", e->max_hp >= 22 && e->max_hp <= 28, 1);
-    check("fungi art", strcmp(e->art, "真菌怪"), 0);
+    check("fungi art", strcmp(e->art, "真菌兽"), 0);
     check("fungi moves", e->move_count, 2);
     check("fungi spores", e->spores, 2);
     int first = e->moves[e->move_index].kind;
@@ -3714,7 +3714,7 @@ static void test_looter(void) {
     battle_test_spawn_act1(18);
     Enemy *e = &g_battle.enemies[0];
     check("looter hp", e->max_hp >= 44 && e->max_hp <= 48, 1);
-    check("looter name", strcmp(e->name, "掠夺者"), 0);
+    check("looter name", strcmp(e->name, "抢劫的"), 0);
     check("looter moves", e->move_count, 4);
     check("looter opens with mug", e->moves[e->move_index].kind, MOVE_MUG);
     check("looter mug damage", e->moves[e->move_index].value, 10);
@@ -3762,7 +3762,7 @@ static void test_looter(void) {
     /* The report screen's Looter demo. */
     card_test_demo_fight(33);
     check("looter demo alive", g_battle.enemies[0].hp > 0, 1);
-    check("looter demo name", strcmp(g_battle.enemies[0].name, "掠夺者"), 0);
+    check("looter demo name", strcmp(g_battle.enemies[0].name, "抢劫的"), 0);
 }
 
 static int name_in(const char *name, const char *const *list, int count) {
@@ -3776,8 +3776,8 @@ static int name_in(const char *name, const char *const *list, int count) {
  * encounters that pair one weak slot with one strong slot. */
 static void test_mixed_encounters(void) {
     static const char *weak_names[] = {"虱虫", "红虱虫", "尖刺史莱姆", "酸液史莱姆"};
-    static const char *strong_names[] = {"邪教徒", "奴隶贩子", "掠夺者"};
-    static const char *wild_names[] = {"真菌怪", "颚虫"};
+    static const char *strong_names[] = {"邪教徒", "奴隶贩子", "抢劫的"};
+    static const char *wild_names[] = {"真菌兽", "大颚虫"};
     battle_test_spawn_act1(19);
     Enemy *e = &g_battle.enemies[0];
     check("blue slaver hp", e->max_hp >= 46 && e->max_hp <= 50, 1);
@@ -3835,7 +3835,7 @@ static void test_mixed_encounters(void) {
         if (g_battle.enemy_count != 2) bad++;
         if (!name_in(g_battle.enemies[0].name, wild_names, 2)) bad++;
         if (!name_in(g_battle.enemies[1].name, weak_names, 4)) bad++;
-        if (strcmp(g_battle.enemies[0].name, "真菌怪") == 0) strong_wild = 1;
+        if (strcmp(g_battle.enemies[0].name, "真菌兽") == 0) strong_wild = 1;
         if (strcmp(g_battle.enemies[1].name, "虱虫") == 0 || strcmp(g_battle.enemies[1].name, "红虱虫") == 0)
             weak_wild_twice |= 1;
         else weak_wild_twice |= 2;
@@ -4007,12 +4007,12 @@ static void test_act2_pool(void) {
     /* The line-ups themselves, through the demo fixtures. */
     battle_test_spawn_act2_monster(1);
     check("chosen count", g_battle.enemy_count, 1);
-    check("chosen name", strcmp(g_battle.enemies[0].name, "天选者"), 0);
+    check("chosen name", strcmp(g_battle.enemies[0].name, "被拣选者"), 0);
     check("chosen hp", g_battle.enemies[0].max_hp >= 95 && g_battle.enemies[0].max_hp <= 99, 1);
 
     battle_test_spawn_act2_monster(2);
     check("parasite count", g_battle.enemy_count, 1);
-    check("parasite name", strcmp(g_battle.enemies[0].name, "寄生兽"), 0);
+    check("parasite name", strcmp(g_battle.enemies[0].name, "带壳寄生怪"), 0);
     check("parasite plated", g_battle.enemies[0].plated, 14);
     check("parasite block", g_battle.enemies[0].block, 14);
 
@@ -4028,7 +4028,7 @@ static void test_act2_pool(void) {
 
     battle_test_spawn_act2_monster(6);
     check("two thieves count", g_battle.enemy_count, 2);
-    check("thieves looter name", strcmp(g_battle.enemies[0].name, "掠夺者"), 0);
+    check("thieves looter name", strcmp(g_battle.enemies[0].name, "抢劫的"), 0);
     check("thieves mugger name", strcmp(g_battle.enemies[1].name, "打劫的"), 0);
 
     /* The strong line-ups, including the two that borrow act 1 monsters. */
@@ -4036,13 +4036,13 @@ static void test_act2_pool(void) {
     check("chosen and byrds count", g_battle.enemy_count, 2);
     check("chosen and byrds names",
           strcmp(g_battle.enemies[0].name, "异鸟") == 0 &&
-          strcmp(g_battle.enemies[1].name, "天选者") == 0, 1);
+          strcmp(g_battle.enemies[1].name, "被拣选者") == 0, 1);
 
     battle_test_spawn_act2_monster(8);
     check("cultist and chosen count", g_battle.enemy_count, 2);
     check("cultist and chosen names",
           strcmp(g_battle.enemies[0].name, "邪教徒") == 0 &&
-          strcmp(g_battle.enemies[1].name, "天选者") == 0, 1);
+          strcmp(g_battle.enemies[1].name, "被拣选者") == 0, 1);
 
     battle_test_spawn_act2_monster(9);
     check("three cultists count", g_battle.enemy_count, 3);
@@ -4052,8 +4052,8 @@ static void test_act2_pool(void) {
     battle_test_spawn_act2_monster(10);
     check("parasite and fungi count", g_battle.enemy_count, 2);
     check("parasite and fungi names",
-          strcmp(g_battle.enemies[0].name, "寄生兽") == 0 &&
-          strcmp(g_battle.enemies[1].name, "真菌怪") == 0, 1);
+          strcmp(g_battle.enemies[0].name, "带壳寄生怪") == 0 &&
+          strcmp(g_battle.enemies[1].name, "真菌兽") == 0, 1);
 
     /* The Mugger runs the Looter's script with the city numbers: 10 damage
      * and 15 gold, then a 16-damage big swipe or the smoke bomb, then escape.
@@ -4126,7 +4126,7 @@ static void test_city_monsters(void) {
     Enemy *sentry = &g_battle.enemies[0];
     check("city sentry count", g_battle.enemy_count, 2);
     check("city sentry names", strcmp(sentry->name, "哨卫") == 0 &&
-          strcmp(g_battle.enemies[1].name, "球体守卫") == 0, 1);
+          strcmp(g_battle.enemies[1].name, "圆球守护者") == 0, 1);
     check("city sentry hp", sentry->max_hp >= 38 && sentry->max_hp <= 42, 1);
     check("city sentry artifact", sentry->artifact, 1);
     check("city sentry opens with bolt", sentry->moves[sentry->move_index].kind, MOVE_DAZED);

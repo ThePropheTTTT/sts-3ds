@@ -37,25 +37,25 @@ def anchor_for(folder: str) -> str:
 
 # Order is baked into port/source/main.c; keep both in sync.
 IMAGES = [
-    ("球体守卫", "images/monsters/theCity/sphere/sphericGuardian.png"),
+    ("圆球守护者", "images/monsters/theCity/sphere/sphericGuardian.png"),
     ("史莱姆老大", "images/monsters/theBottom/boss/slimeKing/slime.png"),
 ]
 
 SPINE = [
     # Champ also ships a Champ.png, but that file is the page of its Spine atlas
     # (same folder holds skeleton.json/skeleton.atlas), not a standalone sprite.
-    ("勇者", "images/monsters/theCity/champ"),
+    ("第一勇士", "images/monsters/theCity/champ"),
     ("酸液史莱姆", "images/monsters/theBottom/slimeM"),
     ("尖刺史莱姆", "images/monsters/theBottom/slimeAltM"),
-    ("颚虫", "images/monsters/theBottom/jawWorm"),
+    ("大颚虫", "images/monsters/theBottom/jawWorm"),
     ("地精大块头", "images/monsters/theBottom/nobGremlin"),
     ("红虱虫", "images/monsters/theBottom/louseRed"),
-    ("真菌怪", "images/monsters/theBottom/fungi"),
+    ("真菌兽", "images/monsters/theBottom/fungi"),
     ("邪教徒", "images/monsters/theBottom/cultist"),
-    ("寄生兽", "images/monsters/theCity/shellMonster"),
+    ("带壳寄生怪", "images/monsters/theCity/shellMonster"),
     ("异鸟", "images/monsters/theCity/byrd"),
-    ("天选者", "images/monsters/theCity/chosen"),
-    ("大书怪", "images/monsters/theCity/stabBook"),
+    ("被拣选者", "images/monsters/theCity/chosen"),
+    ("扎人的书", "images/monsters/theCity/stabBook"),
     ("牧师", "images/monsters/theCity/healer"),
     ("坦克", "images/monsters/theCity/tank"),
     # Both Slavers are localised "奴隶贩子"; the internal keys pick the sprite.
@@ -89,7 +89,7 @@ SPINE_EXTRA = [
     # their own either, so each needs a Spine bake here.
     ("小酸液史莱姆", "images/monsters/theBottom/slimeS"),
     ("小尖刺史莱姆", "images/monsters/theBottom/slimeAltS"),
-    ("掠夺者", "images/monsters/theBottom/looter"),
+    ("抢劫的", "images/monsters/theBottom/looter"),
     ("打劫的", "images/monsters/theCity/looterAlt"),
     # The last four STRONG line-ups add these three; the Centurion and the
     # Healer reuse the tank and cleric skeletons already on the page.

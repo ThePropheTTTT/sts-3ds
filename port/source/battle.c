@@ -1281,7 +1281,7 @@ static void setup_act2_byrd(int slot) {
 
 /* Chosen.java: 95-99 HP, five moves; AbstractMonster.init() rolls Poke. */
 static void setup_act2_chosen(int slot) {
-    add_enemy(slot, "天选者", 95 + (int)(battle_rand() % 5));
+    add_enemy(slot, "被拣选者", 95 + (int)(battle_rand() % 5));
     Enemy *e = &g_battle.enemies[slot];
     e->moves = CHOSEN_MOVES;
     e->move_count = 5;
@@ -1292,7 +1292,7 @@ static void setup_act2_chosen(int slot) {
 
 /* ShelledParasite.java: 68-72 HP, Plated Armor 14 and 14 block on spawn. */
 static void setup_act2_parasite(int slot) {
-    add_enemy(slot, "寄生兽", 68 + (int)(battle_rand() % 5));
+    add_enemy(slot, "带壳寄生怪", 68 + (int)(battle_rand() % 5));
     Enemy *e = &g_battle.enemies[slot];
     e->moves = PARASITE_MOVES;
     e->move_count = 4;
@@ -1305,7 +1305,7 @@ static void setup_act2_parasite(int slot) {
 
 /* SphericGuardian.java: 20 HP behind 40 block, Barricade and Artifact 3. */
 static void setup_act2_orb(int slot) {
-    add_enemy(slot, "球体守卫", 20);
+    add_enemy(slot, "圆球守护者", 20);
     Enemy *e = &g_battle.enemies[slot];
     e->moves = ORB_MOVES;
     e->move_count = 4;
@@ -1504,7 +1504,7 @@ static void setup_act2_slavers(void) {
 
 /* The Champ (Champ.java).  Kept separate so the boss pool can choose it. */
 static void setup_act2_champ(void) {
-    add_enemy(0, "勇者", 420);
+    add_enemy(0, "第一勇士", 420);
     Enemy *e = &g_battle.enemies[0];
     e->moves = CHAMP_MOVES;
     e->move_count = 7;
@@ -1693,7 +1693,7 @@ static void setup_act2(int kind) {
             setup_act2_gremlin_leader();
             return;
         }
-        add_enemy(0, "大书怪", 160 + (int)(battle_rand() % 5));
+        add_enemy(0, "扎人的书", 160 + (int)(battle_rand() % 5));
         Enemy *e = &g_battle.enemies[0];
         e->moves = STAB_MOVES;
         e->move_count = 2;
@@ -1837,7 +1837,7 @@ static void setup_act1_gremlin_gang(void) {
 
 /* MonsterHelper "Looter": 44-48 HP, mugs twice and then leaves. */
 static void setup_act1_looter(int slot) {
-    add_enemy(slot, "掠夺者", 44 + (int)(battle_rand() % 5));
+    add_enemy(slot, "抢劫的", 44 + (int)(battle_rand() % 5));
     Enemy *e = &g_battle.enemies[slot];
     e->moves = LOOTER_MOVES;
     e->move_count = 4;
@@ -1858,7 +1858,7 @@ static void setup_act1_large_slime(int spike) {
 }
 
 static void setup_act1_fungi(int slot) {
-    add_enemy(slot, "真菌怪", 22 + (int)(battle_rand() % 7));
+    add_enemy(slot, "真菌兽", 22 + (int)(battle_rand() % 7));
     Enemy *e = &g_battle.enemies[slot];
     e->moves = FUNGI_MOVES;
     e->move_count = 2;
@@ -1876,7 +1876,7 @@ static void setup_act1_fungi_beasts(void) {
 
 /* Jaw Worm (JawWorm.java): 40-44 HP, Chomp / Thrash / Bellow. */
 static void setup_act1_jaw_worm(int slot) {
-    add_enemy(slot, "颚虫", 40 + (int)(battle_rand() % 5));
+    add_enemy(slot, "大颚虫", 40 + (int)(battle_rand() % 5));
     Enemy *e = &g_battle.enemies[slot];
     e->moves = JAW_WORM_MOVES;
     e->move_count = 3;
