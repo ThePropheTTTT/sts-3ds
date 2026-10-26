@@ -50,7 +50,7 @@ python tools/extract_audio.py --sfx --jar <正版 desktop-1.0.jar> --dest <sdmc>
 | `heal.pcm` | `HEAL_1` | 治疗（预留） |
 | `gold.pcm` | `GOLD_GAIN` | 获得金币（预留） |
 
-17 个文件合计约 1 MB。表中前 12 项已经接入；`ui_click`、`card_select`、`exhaust`、`heal`、`gold` 已生成但还没有调用点。
+17 个文件合计约 1 MB，并且全部都有调用点：`ui_click` 与 `card_select` 覆盖战斗外界面（见下），`exhaust`、`heal`、`gold` 分别在消耗、回血、掉金币/买东西时播放。
 
 ## 运行时
 
@@ -80,7 +80,8 @@ NDSP 初始化成功后，`audio.c` 把 `audio/sfx/*.pcm`（优先 romfs，其�
 - `gain_block`：获得格挡时 `block`。
 - `debuff_enemy`：负面状态真的挂上时 `debuff`。
 - `exhaust_card`：牌进入消耗堆时 `exhaust`；回血药水与营火休息 `heal`；战斗金币奖励与金币加成 `gold`。
-- 战斗中的手牌/目标光标移动 `card_select`，B 取消目标 `card_reject`；地图上移动光标与进入房间 `ui_click`。
+- 战斗中的手牌/目标光标移动 `card_select`，B 取消目标 `card_reject`；状态面板切标签、药水面板上下选药水 `card_select`，关面板 `card_reject`。
+- 战斗外界面：标题屏上下选择与确认、地图平移/选房/进房间、事件选项、宝箱与幕间过场 `ui_click`；奖励屏左右选牌与领取 `card_select`、跳过 `card_reject`；营火翻转选项与确认、升级屏翻页与确认 `card_select`/`ui_click`；商店导航 `ui_click`、买成功 `gold`、钱不够或被拒 `card_reject`；删牌服务成功 `gold`、取消 `card_reject`；选牌器（PICK）翻页/选中 `card_select`、取消 `card_reject`。
 - `battle_start` / `battle_end_turn` / `win_battle` / 玩家死亡：`battle_start` / `end_turn` / `victory` / `defeat`。
 
 自动测试会打几百张牌，所以 `card_test_run()` 期间用 `audio_sfx_mute(1)` 静音，跑完再打开，避免测试构建一启动就连续响。
@@ -101,11 +102,12 @@ Azahar 的 DSP 是 HLE，不需要真正的 DSP 固件；但 libctru 的 `ndspIn
 `r` 是已经补过的 NDSP 缓冲块数；它随时间增长，说明 DSP 确实在消费流。第二条依次是已加载音效数、当前占用通道数、最近播放的 clip、累计播放次数。缺文件时分别显示 `音乐 act1.pcm 缺失`、`音效 0/17`。
 
 截图 `.tmp/shots/1400_sfx_report.png`（17/17、已发 0）和 `1404_sfx_report_played.png`（打出打击后已发 3，最近 `card_play`）是 SD 路径的证据；`.tmp/shots/sfx_hit.png` 是在第 2 幕奴隶贩子战斗里按 Y 之后截的报告屏（`最近 hit 已发 4`），说明敌人挥击声与命中声都走了通道；打包后的构建用 `.tmp/shots/1600_audio_pack_report.png` 验收：`音乐 act1 3:21 PLAYING NDSP r=32`、`音效 17/17`，且 `log.txt` 写有 `audio act1: romfs` / `audio sfx: romfs`。Azahar 的 NDSP HLE 不暴露实际发声，能验收的是加载、通道与缓冲推进。
+战斗外的 UI 音用 `.tmp/shots/ui_sfx_report.png` 验收：在测试报告屏按 B 进 7 号 demo、R 开状态面板、L 切到药水标签、B 关面板，再按 SELECT 回报告屏，第二行显示 `音效 17/17 播放 0 最近 card_reject 已发 2`——`ui_click`（切标签）与 `card_reject`（关面板）各计一次。
 
 ## 已知缺口
 
 - 没有音量/静音设置、没有淡入淡出；音效只在 NDSP 路径可用。
-- 17 个片段都有调用点了，但 `ui_click` 目前只覆盖地图；商店、营火和标题屏的点击仍是静音。
+- 战斗外界面也都有按键音了，但触摸点按（`handle_touch`）走的是另一条分支，只有按键会响，手指点屏幕仍然静音。
 - 没有 Boss 曲、菜单曲和角色语音，只有三幕普通 BGM。
 - CSND 后备一次性占用整首曲目的线性内存，且不支持音效。
 - 三幕 BGM 全打包后 3dsx 约 32 MB；Old 3DS 的内存/加载器可能吃不消，目标机型仍是 New 3DS。若只是快速迭代，可先不放 `assets/audio/`，改用 SD 副本。

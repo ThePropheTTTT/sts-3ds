@@ -3661,9 +3661,14 @@ static void handle_buttons(u32 kDown) {
     switch (g_run.screen) {
     case SCREEN_TITLE: {
         int count = s_title_has_save ? 2 : 1;
-        if (kDown & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT))
+        if (kDown & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) {
             s_title_sel = (s_title_sel + 1) % count;
-        if (kDown & KEY_A) title_choose(s_title_sel);
+            audio_sfx(AUDIO_SFX_UI_CLICK);
+        }
+        if (kDown & KEY_A) {
+            audio_sfx(AUDIO_SFX_UI_CLICK);
+            title_choose(s_title_sel);
+        }
         break;
     }
     case SCREEN_FIGHT:
@@ -3672,27 +3677,41 @@ static void handle_buttons(u32 kDown) {
                 s_panel_tab = 1 - s_panel_tab;
                 s_potion_sel = 0;
                 s_panel_scroll = 0;
+                audio_sfx(AUDIO_SFX_UI_CLICK);
             }
             if (s_panel_tab == 0) {
                 StatusRow rows[STATUS_ROW_MAX];
                 int count = status_collect(rows, STATUS_ROW_MAX);
                 int max_scroll = count > STATUS_VISIBLE ? count - STATUS_VISIBLE : 0;
                 if (kDown & KEY_UP) {
-                    if (s_panel_scroll > 0) s_panel_scroll--;
+                    if (s_panel_scroll > 0) {
+                        s_panel_scroll--;
+                        audio_sfx(AUDIO_SFX_UI_CLICK);
+                    }
                 }
                 if (kDown & KEY_DOWN) {
-                    if (s_panel_scroll < max_scroll) s_panel_scroll++;
+                    if (s_panel_scroll < max_scroll) {
+                        s_panel_scroll++;
+                        audio_sfx(AUDIO_SFX_UI_CLICK);
+                    }
                 }
                 if (s_panel_scroll > max_scroll) s_panel_scroll = max_scroll;
             }
             if (s_panel_tab == 1) {
                 int count = battle_potion_count();
                 if (count > 0) {
-                    if (kDown & KEY_UP) s_potion_sel = (s_potion_sel + count - 1) % count;
-                    if (kDown & KEY_DOWN) s_potion_sel = (s_potion_sel + 1) % count;
+                    if (kDown & KEY_UP) {
+                        s_potion_sel = (s_potion_sel + count - 1) % count;
+                        audio_sfx(AUDIO_SFX_CARD_SELECT);
+                    }
+                    if (kDown & KEY_DOWN) {
+                        s_potion_sel = (s_potion_sel + 1) % count;
+                        audio_sfx(AUDIO_SFX_CARD_SELECT);
+                    }
                     if (s_potion_sel >= count) s_potion_sel = 0;
                     if (kDown & KEY_A) {
                         int id = battle_potion_at(s_potion_sel);
+                        audio_sfx(AUDIO_SFX_CARD_SELECT);
                         if (id == POTION_FIRE || id == POTION_FEAR || id == POTION_WEAK) {
                             s_pending_potion = s_potion_sel;
                             s_detail = 0;
@@ -3705,20 +3724,31 @@ static void handle_buttons(u32 kDown) {
                     }
                 }
             }
-            if (kDown & (KEY_X | KEY_B)) s_detail = 0;
+            if (kDown & (KEY_X | KEY_B)) {
+                s_detail = 0;
+                audio_sfx(AUDIO_SFX_CARD_REJECT);
+            }
             return;
         }
         if (s_pending_potion >= 0) {
             if (kDown & (KEY_LEFT | KEY_L)) {
-                if (s_target > 0) s_target--;
+                if (s_target > 0) {
+                    s_target--;
+                    audio_sfx(AUDIO_SFX_CARD_SELECT);
+                }
             }
             if (kDown & (KEY_RIGHT | KEY_R)) {
-                if (s_target + 1 < g_battle.enemy_count) s_target++;
+                if (s_target + 1 < g_battle.enemy_count) {
+                    s_target++;
+                    audio_sfx(AUDIO_SFX_CARD_SELECT);
+                }
             }
             if (kDown & KEY_B) {
                 s_pending_potion = -1;
                 s_target_mode = 0;
+                audio_sfx(AUDIO_SFX_CARD_REJECT);
             } else if (kDown & KEY_A) {
+                audio_sfx(AUDIO_SFX_UI_CLICK);
                 battle_use_potion(s_pending_potion, s_target);
                 s_pending_potion = -1;
                 s_target_mode = 0;
@@ -3776,19 +3806,36 @@ static void handle_buttons(u32 kDown) {
 
     case SCREEN_REWARD:
         if (kDown & (KEY_LEFT | KEY_L)) {
-            if (s_reward_focus > 0) s_reward_focus--;
+            if (s_reward_focus > 0) {
+                s_reward_focus--;
+                audio_sfx(AUDIO_SFX_CARD_SELECT);
+            }
         }
         if (kDown & (KEY_RIGHT | KEY_R)) {
-            if (s_reward_focus + 1 < g_run.reward_count) s_reward_focus++;
+            if (s_reward_focus + 1 < g_run.reward_count) {
+                s_reward_focus++;
+                audio_sfx(AUDIO_SFX_CARD_SELECT);
+            }
         }
-        if (kDown & KEY_B) battle_skip_reward();
-        if (kDown & KEY_A) battle_choose_reward(s_reward_focus);
+        if (kDown & KEY_B) {
+            audio_sfx(AUDIO_SFX_CARD_REJECT);
+            battle_skip_reward();
+        }
+        if (kDown & KEY_A) {
+            audio_sfx(AUDIO_SFX_CARD_SELECT);
+            battle_choose_reward(s_reward_focus);
+        }
         break;
 
     case SCREEN_CAMPFIRE:
-        if (kDown & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT | KEY_L | KEY_R))
+        if (kDown & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT | KEY_L | KEY_R)) {
             s_campfire_focus = 1 - s_campfire_focus;
-        if (kDown & KEY_A) battle_campfire(s_campfire_focus);
+            audio_sfx(AUDIO_SFX_CARD_SELECT);
+        }
+        if (kDown & KEY_A) {
+            audio_sfx(AUDIO_SFX_UI_CLICK);
+            battle_campfire(s_campfire_focus);
+        }
         break;
 
     case SCREEN_UPGRADE: {
@@ -3804,9 +3851,16 @@ static void handle_buttons(u32 kDown) {
             s_upgrade_focus += step;
             if (s_upgrade_focus < 0) s_upgrade_focus = 0;
             if (s_upgrade_focus >= count) s_upgrade_focus = count > 0 ? count - 1 : 0;
+            audio_sfx(AUDIO_SFX_CARD_SELECT);
         }
-        if (kDown & KEY_B) battle_cancel_upgrade();
-        if (kDown & KEY_A) battle_confirm_upgrade(s_upgrade_focus);
+        if (kDown & KEY_B) {
+            audio_sfx(AUDIO_SFX_CARD_REJECT);
+            battle_cancel_upgrade();
+        }
+        if (kDown & KEY_A) {
+            audio_sfx(AUDIO_SFX_UI_CLICK);
+            battle_confirm_upgrade(s_upgrade_focus);
+        }
         break;
     }
 
@@ -3880,6 +3934,7 @@ static void handle_buttons(u32 kDown) {
          * three potions, the purge service).  The game walks them with a spatial
          * cursor (ShopScreen.setCursorPosition); a row/column grid reads the same
          * on the small screen and keeps LEFT/RIGHT meaningful. */
+        int shop_before = s_shop_sel;
         if (kDown & (KEY_LEFT | KEY_L)) {
             int col = shop_col(s_shop_sel);
             if (col > 0) s_shop_sel = shop_index(shop_row(s_shop_sel), col - 1);
@@ -3893,40 +3948,57 @@ static void handle_buttons(u32 kDown) {
         if (kDown & KEY_UP) {
             if (shop_row(s_shop_sel) == 1) s_shop_sel = shop_index(0, shop_col(s_shop_sel));
         }
+        if (s_shop_sel != shop_before) audio_sfx(AUDIO_SFX_UI_CLICK);
         if (kDown & KEY_A) {
+            int bought = 0;
+            int enter_purge = 0;
             if (s_shop_sel < 7) {
-                map_buy(s_shop_sel);
+                bought = map_buy(s_shop_sel);
             } else if (s_shop_sel < 10) {
-                map_buy_relic(s_shop_sel - 7);
+                bought = map_buy_relic(s_shop_sel - 7);
             } else if (s_shop_sel < 13) {
-                map_buy_potion(s_shop_sel - 10);
+                bought = map_buy_potion(s_shop_sel - 10);
             } else if (!g_map.purge_done && g_map.gold >= g_map.purge_cost) {
                 s_purge_focus = 0;
                 g_run.screen = SCREEN_PURGE;
+                enter_purge = 1;
             } else {
                 snprintf(g_map.message, sizeof(g_map.message), "金币不足");
             }
+            if (bought) audio_sfx(AUDIO_SFX_GOLD);
+            else if (enter_purge) audio_sfx(AUDIO_SFX_UI_CLICK);
+            else audio_sfx(AUDIO_SFX_CARD_REJECT);
         }
-        if (kDown & KEY_B) map_after_node();
+        if (kDown & KEY_B) {
+            audio_sfx(AUDIO_SFX_CARD_REJECT);
+            map_after_node();
+        }
         break;
     }
 
     case SCREEN_PURGE: {
         int count = battle_deck_count();
         if (kDown & KEY_UP) {
-            if (s_purge_focus > 0) s_purge_focus--;
+            if (s_purge_focus > 0) {
+                s_purge_focus--;
+                audio_sfx(AUDIO_SFX_CARD_SELECT);
+            }
         }
         if (kDown & KEY_DOWN) {
-            if (s_purge_focus + 1 < count) s_purge_focus++;
+            if (s_purge_focus + 1 < count) {
+                s_purge_focus++;
+                audio_sfx(AUDIO_SFX_CARD_SELECT);
+            }
         }
         if (kDown & KEY_A) {
             /* map_purge() routes back to the event or the shop itself. Do not
              * overwrite that here: the Cleric's purify must return to its
              * result page, not to a shop screen that is not in the stack. */
-            map_purge(s_purge_focus);
+            audio_sfx(map_purge(s_purge_focus) ? AUDIO_SFX_GOLD : AUDIO_SFX_CARD_REJECT);
             if (s_purge_focus >= battle_deck_count()) s_purge_focus = 0;
         }
         if (kDown & KEY_B) {
+            audio_sfx(AUDIO_SFX_CARD_REJECT);
             g_run.screen = g_map.purge_from_event ? SCREEN_EVENT : SCREEN_SHOP;
         }
         break;
@@ -3934,24 +4006,38 @@ static void handle_buttons(u32 kDown) {
 
     case SCREEN_EVENT:
         if (g_map.event_done) {
-            if (kDown & KEY_A) map_after_node();
+            if (kDown & KEY_A) {
+                audio_sfx(AUDIO_SFX_UI_CLICK);
+                map_after_node();
+            }
         } else {
+            int event_before = s_event_sel;
             if (kDown & (KEY_UP | KEY_LEFT)) {
                 if (s_event_sel > 0) s_event_sel--;
             }
             if (kDown & (KEY_DOWN | KEY_RIGHT)) {
                 if (s_event_sel < 2) s_event_sel++;
             }
-            if (kDown & KEY_A) map_event_choose(s_event_sel);
+            if (s_event_sel != event_before) audio_sfx(AUDIO_SFX_UI_CLICK);
+            if (kDown & KEY_A) {
+                audio_sfx(AUDIO_SFX_UI_CLICK);
+                map_event_choose(s_event_sel);
+            }
         }
         break;
 
     case SCREEN_TREASURE:
-        if (kDown & KEY_A) map_after_node();
+        if (kDown & KEY_A) {
+            audio_sfx(AUDIO_SFX_UI_CLICK);
+            map_after_node();
+        }
         break;
 
     case SCREEN_ACT_CLEAR:
-        if (kDown & KEY_A) run_advance_act();
+        if (kDown & KEY_A) {
+            audio_sfx(AUDIO_SFX_UI_CLICK);
+            run_advance_act();
+        }
         break;
 
     case SCREEN_PICK: {
@@ -3960,6 +4046,7 @@ static void handle_buttons(u32 kDown) {
         int per_row = battle_pick_mode() == PICK_DISCOVERY ? 3 : 5;
         if (count <= 0) break;
         if (s_pick_sel >= count) s_pick_sel = count - 1;
+        int pick_before = s_pick_sel;
         if (kDown & KEY_LEFT) {
             if (s_pick_sel > 0) s_pick_sel--;
         }
@@ -3982,11 +4069,22 @@ static void handle_buttons(u32 kDown) {
             int page = s_pick_sel / per;
             if ((page + 1) * per < count) s_pick_sel = (page + 1) * per;
         }
-        if (kDown & KEY_B) battle_pick_cancel();
+        if (s_pick_sel != pick_before) audio_sfx(AUDIO_SFX_CARD_SELECT);
+        if (kDown & KEY_B) {
+            audio_sfx(AUDIO_SFX_CARD_REJECT);
+            battle_pick_cancel();
+        }
         if (battle_pick_multi()) {
-            if (kDown & KEY_A) battle_pick_toggle(s_pick_sel);
-            if (kDown & KEY_Y) battle_pick_confirm_multi();
+            if (kDown & KEY_A) {
+                audio_sfx(AUDIO_SFX_CARD_SELECT);
+                battle_pick_toggle(s_pick_sel);
+            }
+            if (kDown & KEY_Y) {
+                audio_sfx(AUDIO_SFX_CARD_SELECT);
+                battle_pick_confirm_multi();
+            }
         } else if (kDown & KEY_A) {
+            audio_sfx(AUDIO_SFX_CARD_SELECT);
             battle_pick_choose(s_pick_sel);
         }
         break;
